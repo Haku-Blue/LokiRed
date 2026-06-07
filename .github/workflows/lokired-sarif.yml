@@ -10,6 +10,7 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       security-events: write
 
@@ -31,7 +32,7 @@ jobs:
           fail-on: "none"
 
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: lokired.sarif
 
