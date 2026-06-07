@@ -100,13 +100,19 @@ Active issues: 9
 
 1. [CRITICAL] UNSAFE_APPROVAL_MODE
    Title: Agent approvals are disabled
-   File: C:\path\to\repo\.codex\config.toml
-   Config: codex_config
+   File: .codex\config.toml
+   Config type: Codex configuration
    Line: 1
-   Risk: Codex is configured with approval_policy='never', reducing human checkpoints for tool use.
-   Evidence: config_path=approval_policy; value=never
-   Fingerprint: lr1:...
-   Remediation: Use an approval policy that prompts before risky tool use in shared or CI-controlled workspaces.
+
+   Risk:
+   Codex is configured with approval_policy='never', reducing human checkpoints for tool use.
+
+   Evidence:
+   Setting: approval_policy
+   Value: never
+
+   Remediation:
+   Use an approval policy that prompts before risky tool use in shared or CI-controlled workspaces.
 ```
 
 ## Command Reference
@@ -114,7 +120,7 @@ Active issues: 9
 LokiRed has one command:
 
 ```powershell
-lokired scan [folder_path] [--format text|json|sarif] [--fail-on low|medium|high|critical|none] [--policy path] [--baseline path] [--write-baseline path]
+lokired scan [folder_path] [--format text|json|sarif] [--fail-on low|medium|high|critical|none] [--policy path] [--baseline path] [--write-baseline path] [--verbose]
 ```
 
 Arguments:
@@ -125,6 +131,7 @@ Arguments:
 - `--policy`: Optional explicit policy file path. Without this flag, LokiRed discovers `.lokired.yml` or `.lokired.yaml` in the scan root when present.
 - `--baseline`: Optional LokiRed baseline JSON file. Findings are classified as `new`, `unchanged`, or `resolved`.
 - `--write-baseline`: Write active findings from the scan to a versioned baseline JSON file.
+- `--verbose`: Show machine-oriented details such as finding fingerprints in text output.
 
 Severity options:
 
@@ -144,6 +151,12 @@ Best for humans reading results in a terminal:
 
 ```powershell
 lokired scan . --format text
+```
+
+Text output uses paths relative to the scan root when possible, expands internal config identifiers into readable labels, and formats evidence across multiple lines. Use `--verbose` when you want fingerprints in the terminal report:
+
+```powershell
+lokired scan . --format text --verbose
 ```
 
 ### JSON
@@ -390,11 +403,11 @@ Each finding includes:
 - `Rule ID`: Stable identifier for the rule that fired.
 - `Title`: Short explanation of the problem.
 - `File`: The file containing the issue.
-- `Config`: The detected config ecosystem.
+- `Config type`: The detected config ecosystem, shown as a readable label in text output.
 - `Line`: Where LokiRed found the evidence.
 - `Risk`: Why the finding matters.
 - `Evidence`: The exact config path, server name, operation, or setting involved.
-- `Fingerprint`: Stable finding identity used by suppressions, baselines, and SARIF.
+- `Fingerprint`: Stable finding identity used by suppressions, baselines, and SARIF. Text output shows this only with `--verbose`; JSON and SARIF always include machine-readable fingerprints.
 - `Remediation`: Practical guidance for fixing it.
 
 Example:
@@ -403,8 +416,14 @@ Example:
 [HIGH] HARDCODED_SECRET
 File: mcp-config.json
 Line: 10
-Evidence: config_path=mcpServers.github.env.GITHUB_TOKEN; key=GITHUB_TOKEN; value=<redacted>
-Remediation: Load this value from a secret manager or environment variable reference instead of committing the secret directly.
+
+Evidence:
+Setting: mcpServers.github.env.GITHUB_TOKEN
+Key: GITHUB_TOKEN
+Value: <redacted>
+
+Remediation:
+Load this value from a secret manager or environment variable reference instead of committing the secret directly.
 ```
 
 Fix:
