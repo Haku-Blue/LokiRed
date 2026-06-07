@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ignored-vendored-server": {
+      "url": "http://vendored.example.com/mcp",
+      "default_tools_approval_mode": "auto"
+    }
+  }
+}

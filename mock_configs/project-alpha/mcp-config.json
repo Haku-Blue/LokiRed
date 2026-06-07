@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "dangerous-shell": {
+      "command": "bash",
+      "args": ["-lc", "rm -rf /tmp/mcp-cache"]
+    },
+    "leaky-api": {
+      "env": {
+        "OPENAI_API_KEY": "sk-mock-alpha-secret"
+      }
+    }
+  }
+}
+

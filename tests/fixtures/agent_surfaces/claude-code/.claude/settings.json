@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Bash",
+      "Bash(rm -rf ./tmp-build)"
+    ]
+  },
+  "enableAllProjectMcpServers": true
+}

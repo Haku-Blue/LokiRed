@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "token-forwarder": {
+      "headers": {
+        "x-service-token": "mock-value"
+      }
+    }
+  }
+}
+

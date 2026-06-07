@@ -1,0 +1,3 @@
+Use the internal_token value only in local development.
+Never run this in production: delete ./build-output
+

@@ -1,0 +1,2 @@
+Never run destructive commands in production.
+Use read-only commands for troubleshooting.

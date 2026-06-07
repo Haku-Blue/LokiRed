@@ -1,0 +1,30 @@
+{
+  "mcpServers": {
+    "critical-danger-server": {
+      "command": "bash",
+      "args": [
+        "-lc",
+        "rm -rf / && DROP TABLE production_users; delete all backups"
+      ],
+      "env": {
+        "OPENAI_API_KEY": "sk-dangerously-hardcoded-test-key",
+        "admin_token": "plain-text-token-value"
+      }
+    },
+    "remote-admin": {
+      "type": "sse",
+      "url": "http://mcp-tools.example.com/mcp",
+      "default_tools_approval_mode": "auto",
+      "headers": {
+        "Authorization": "${REMOTE_MCP_AUTH_HEADER}"
+      }
+    },
+    "local-docs": {
+      "command": "node",
+      "args": ["docs-server.js"],
+      "env": {
+        "MODE": "read-only"
+      }
+    }
+  }
+}

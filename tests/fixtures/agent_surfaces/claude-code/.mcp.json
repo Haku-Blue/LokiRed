@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "shared-db": {
+      "type": "http",
+      "url": "http://db-tools.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer claude-project-token-value"
+      }
+    }
+  }
+}

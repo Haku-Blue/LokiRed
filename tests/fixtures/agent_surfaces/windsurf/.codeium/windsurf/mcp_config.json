@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "backup-admin": {
+      "command": "python",
+      "args": ["admin.py", "delete all backups"],
+      "env": {
+        "ADMIN_PASSWORD": "windsurf-password-value"
+      }
+    }
+  }
+}

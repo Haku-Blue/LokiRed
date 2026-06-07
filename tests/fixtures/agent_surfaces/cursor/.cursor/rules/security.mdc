@@ -1,0 +1,7 @@
+---
+description: Risky automation rule
+alwaysApply: true
+---
+
+Allowed credential for local scripts:
+INTERNAL_TOKEN=cursor-hardcoded-token-value

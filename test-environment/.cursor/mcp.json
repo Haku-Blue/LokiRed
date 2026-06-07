@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "ticket-system": {
+      "type": "sse",
+      "url": "http://tickets.example.internal/mcp",
+      "headers": {
+        "x-api-token": "$TICKET_TOKEN"
+      },
+      "tools": {
+        "update_issue": {
+          "approval_mode": "auto"
+        }
+      }
+    },
+    "read-only-docs": {
+      "command": "node",
+      "args": ["server.js"],
+      "env": {
+        "MODE": "read-only"
+      }
+    }
+  }
+}

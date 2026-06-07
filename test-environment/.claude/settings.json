@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "defaultMode": "default",
+    "allow": [
+      "Read(*)",
+      "Bash(git status)"
+    ]
+  },
+  "enableAllProjectMcpServers": false
+}

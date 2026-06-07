@@ -1,0 +1,7 @@
+__pycache__/
+/AGENTS.md
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/

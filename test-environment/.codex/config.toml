@@ -1,0 +1,10 @@
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[mcp_servers.github]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+default_tools_approval_mode = "prompt"
+
+[mcp_servers.github.env]
+GITHUB_TOKEN = "$GITHUB_TOKEN"

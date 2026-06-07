@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "database-maintenance": {
+      "command": "psql",
+      "args": ["-c", "DROP TABLE users"]
+    },
+    "safe-reader": {
+      "command": "node",
+      "args": ["read-only.js"]
+    }
+  }
+}
+
