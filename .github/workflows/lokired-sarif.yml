@@ -1,0 +1,43 @@
+name: LokiRed SARIF
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate SARIF
+        uses: ./
+        with:
+          scan-path: "."
+          output-format: "sarif"
+          output-file: "lokired.sarif"
+          fail-on: "none"
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: lokired.sarif
+
+      - name: Enforce LokiRed threshold
+        uses: ./
+        with:
+          scan-path: "."
+          output-format: "text"
+          fail-on: "high"

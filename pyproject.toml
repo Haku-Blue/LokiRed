@@ -13,4 +13,15 @@ dependencies = []
 lokired = "lokired:main"
 
 [tool.setuptools]
-py-modules = ["lokired", "reporter", "run_scanner", "security_file_scanner"]
+py-modules = [
+    "baseline",
+    "classification",
+    "fingerprints",
+    "inventory",
+    "lokired",
+    "policy",
+    "reporter",
+    "rule_catalog",
+    "run_scanner",
+    "security_file_scanner",
+]

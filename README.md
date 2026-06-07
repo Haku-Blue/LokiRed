@@ -25,7 +25,7 @@ LokiRed currently detects:
 - Codex configs with full filesystem access.
 - Invalid JSON or TOML in supported config files.
 
-LokiRed also produces an inventory of discovered agent configuration files when using JSON output.
+LokiRed also produces an inventory of discovered agent configuration files when using JSON output. JSON output includes a versioned normalized inventory, permission classifications, stable finding fingerprints, policy and suppression metadata, and optional baseline diff state.
 
 ## Supported Files
 
@@ -96,6 +96,7 @@ If LokiRed finds issues, the default text output looks like this:
 LokiRed scan findings
 =====================
 Total issues: 9
+Active issues: 9
 
 1. [CRITICAL] UNSAFE_APPROVAL_MODE
    Title: Agent approvals are disabled
@@ -104,15 +105,16 @@ Total issues: 9
    Line: 1
    Risk: Codex is configured with approval_policy='never', reducing human checkpoints for tool use.
    Evidence: config_path=approval_policy; value=never
+   Fingerprint: lr1:...
    Remediation: Use an approval policy that prompts before risky tool use in shared or CI-controlled workspaces.
 ```
 
 ## Command Reference
 
-LokiRed currently has one command:
+LokiRed has one command:
 
 ```powershell
-lokired scan [folder_path] [--format text|json|sarif] [--fail-on low|medium|high|critical|none]
+lokired scan [folder_path] [--format text|json|sarif] [--fail-on low|medium|high|critical|none] [--policy path] [--baseline path] [--write-baseline path]
 ```
 
 Arguments:
@@ -120,6 +122,9 @@ Arguments:
 - `folder_path`: Folder to scan. Defaults to the current directory.
 - `--format`: Output format. Defaults to `text`.
 - `--fail-on`: Exit with code `1` when findings are at or above the chosen severity. Defaults to `low`.
+- `--policy`: Optional explicit policy file path. Without this flag, LokiRed discovers `.lokired.yml` or `.lokired.yaml` in the scan root when present.
+- `--baseline`: Optional LokiRed baseline JSON file. Findings are classified as `new`, `unchanged`, or `resolved`.
+- `--write-baseline`: Write active findings from the scan to a versioned baseline JSON file.
 
 Severity options:
 
@@ -156,6 +161,11 @@ The JSON report includes:
 - Summary counts by config type.
 - Full finding details.
 - Inventory of discovered config files.
+- Versioned normalized inventory records.
+- Permission classifications.
+- Stable finding fingerprints.
+- Suppressed findings and suppression review metadata when policy suppressions are used.
+- Baseline diff state when `--baseline` is used.
 
 Example shape:
 
@@ -174,8 +184,16 @@ Example shape:
     }
   },
   "inventory": {
-    "total_config_files": 8
+    "total_config_files": 8,
+    "normalized": {
+      "schema_version": "1.0",
+      "resources": [],
+      "identities": [],
+      "permissions": [],
+      "bindings": []
+    }
   },
+  "classifications": [],
   "findings": []
 }
 ```
@@ -193,6 +211,56 @@ To save SARIF to a file:
 ```powershell
 lokired scan . --format sarif --fail-on none > lokired.sarif
 ```
+
+SARIF includes stable rule ids, rule metadata, relative file locations when a scan root is known, remediation guidance, evidence, and `lokiredFingerprint/v1` partial fingerprints for GitHub code scanning deduplication.
+
+## Policies And Suppressions
+
+LokiRed policy files are local, versioned, and optional. By default, LokiRed looks for `.lokired.yml` or `.lokired.yaml` in the scan root. Use `--policy` to provide an explicit path.
+
+Example:
+
+```yaml
+schema_version: 1
+
+access:
+  deny:
+    - category: secret
+      access: read_secret_literal
+      severity: critical
+      reason: Literal secrets are not allowed in agent config.
+
+rules:
+  INSECURE_REMOTE_MCP:
+    severity: high
+
+suppressions:
+  - rule_id: HARDCODED_SECRET
+    path: mcp-config.json
+    config_path: mcpServers.github.env.GITHUB_TOKEN
+    reason: Synthetic fixture credential.
+    owner: appsec
+    expires: 2099-01-01
+    ticket: SEC-123
+```
+
+Suppression entries require a rule id, a reason, and at least one narrow selector such as `fingerprint`, `path`, `config_path`, or `resource`. Expired, unused, malformed, or overly broad suppressions are reported instead of silently hiding findings.
+
+## Baseline Diff Scanning
+
+Create a baseline:
+
+```powershell
+lokired scan . --format json --write-baseline .lokired-baseline.json --fail-on none
+```
+
+Use a baseline:
+
+```powershell
+lokired scan . --baseline .lokired-baseline.json --fail-on high
+```
+
+In baseline mode, active findings are marked as `new` or `unchanged`, and findings that disappeared are listed as `resolved`. CI thresholds apply only to new active findings when `--baseline` is supplied. Without a baseline, threshold behavior is unchanged.
 
 ## Using LokiRed In CI
 
@@ -220,8 +288,22 @@ Exit codes:
 
 - `0`: No findings at or above the configured threshold.
 - `1`: One or more findings at or above the configured threshold.
+- `2`: Scan setup failed, such as malformed policy, malformed baseline, or an invalid scan path.
 
 ### Example GitHub Actions Workflow
+
+This repository includes `action.yml`, a thin composite action that invokes the CLI. In another repository, pin LokiRed to a release tag. Inside this repository, `uses: ./` runs the local checkout.
+
+Using the bundled action from a checkout:
+
+```yaml
+- name: Scan agent and MCP config
+  uses: ./
+  with:
+    scan-path: "."
+    output-format: "text"
+    fail-on: "high"
+```
 
 Create `.github/workflows/lokired.yml`:
 
@@ -308,6 +390,7 @@ Each finding includes:
 - `Line`: Where LokiRed found the evidence.
 - `Risk`: Why the finding matters.
 - `Evidence`: The exact config path, server name, operation, or setting involved.
+- `Fingerprint`: Stable finding identity used by suppressions, baselines, and SARIF.
 - `Remediation`: Practical guidance for fixing it.
 
 Example:
@@ -371,8 +454,15 @@ The tests cover:
 - Text, JSON, and SARIF reporters.
 - Realistic mixed workspace scanning.
 - Supported ecosystem discovery.
+- Normalized inventory serialization.
+- Permission classification.
+- Policy deny rules and severity overrides.
+- Active, expired, invalid, and unused suppressions.
+- Baseline generation and new, unchanged, and resolved diff results.
 - CI threshold behavior.
 - CLI JSON output and exit codes.
+- GitHub Action metadata.
+- Deterministic output ordering.
 
 ## Compatibility Wrapper
 
@@ -406,22 +496,34 @@ Current limitations:
 - It does not call an LLM to judge severity.
 - It does not require cloud connectivity.
 - It does not upload config contents.
-- It does not yet include suppressions or policy files.
 - It does not yet scan every AI-agent ecosystem.
 - It focuses on high-signal config and instruction risks, not full secret scanning across every file.
+- Its built-in YAML parser supports the policy subset documented in this repository rather than the full YAML specification.
+
+## Rule Documentation
+
+Detailed rule documentation lives in [docs/rules](docs/rules), with a broader workflow guide in [docs/guide.md](docs/guide.md). Each rule page documents the rule id, title, purpose, detection behavior, severity, supported ecosystems, trigger and non-trigger examples, remediation, suppression guidance, and known limitations.
 
 ## Development Notes
 
 Project layout:
 
 ```text
-lokired.py                 CLI entrypoint and scan orchestration
-security_file_scanner.py   Discovery and deterministic rules
-reporter.py                Text, JSON, and SARIF output
-run_scanner.py             Compatibility wrapper
-tests/                     Unit and pipeline tests
-mock_configs/              Small MCP fixtures
-test-environment/          Realistic mixed workspace fixture
+lokired.py                         CLI entrypoint and scan orchestration
+security_file_scanner.py           Discovery and deterministic rules
+inventory.py                       Versioned normalized inventory schema
+classification.py                  Permission classification over inventory
+policy.py                          Policy, suppressions, and policy deny findings
+baseline.py                        Baseline creation, validation, and diffing
+fingerprints.py                    Stable finding fingerprints
+rule_catalog.py                    Stable rule metadata
+reporter.py                        Text, JSON, and SARIF output
+action.yml                         Thin GitHub Action wrapper around the CLI
+docs/                              Workflow and rule documentation
+run_scanner.py                     Compatibility wrapper
+tests/                             Unit and pipeline tests
+mock_configs/                      Small MCP fixtures
+test-environment/                  Realistic mixed workspace fixture
 ```
 
 LokiRed's MVP design goal is to stay evidence-first:
@@ -435,10 +537,8 @@ LokiRed's MVP design goal is to stay evidence-first:
 
 Likely next steps:
 
-- Suppression comments or policy files with required justification.
 - More agent ecosystems and config formats.
 - More granular MCP server/tool risk rules.
-- SARIF quality improvements for GitHub code scanning.
 - GitHub App integration for pull request checks.
 - Team inventory dashboard.
 - Runtime MCP gateway or proxy with policy and audit logs.

@@ -1,0 +1,62 @@
+name: LokiRed Scan
+description: Scan AI-agent and MCP configuration risk with the local LokiRed CLI.
+author: LokiRed
+
+inputs:
+  scan-path:
+    description: Directory to scan.
+    required: false
+    default: "."
+  policy-path:
+    description: Optional path to .lokired.yml or .lokired.yaml.
+    required: false
+    default: ""
+  baseline-path:
+    description: Optional path to a LokiRed baseline JSON file.
+    required: false
+    default: ""
+  output-format:
+    description: Output format passed to lokired scan.
+    required: false
+    default: "text"
+  output-file:
+    description: Optional file path where scan output should be written.
+    required: false
+    default: ""
+  fail-on:
+    description: Lowest severity that fails the action. Use none to report only.
+    required: false
+    default: "high"
+  write-baseline:
+    description: Optional path where LokiRed should write a baseline JSON file.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install LokiRed from checkout
+      shell: bash
+      run: python -m pip install .
+
+    - name: Run LokiRed scan
+      shell: bash
+      run: |
+        set -euo pipefail
+        args=(scan "${{ inputs.scan-path }}" --format "${{ inputs.output-format }}" --fail-on "${{ inputs.fail-on }}")
+
+        if [ -n "${{ inputs.policy-path }}" ]; then
+          args+=(--policy "${{ inputs.policy-path }}")
+        fi
+        if [ -n "${{ inputs.baseline-path }}" ]; then
+          args+=(--baseline "${{ inputs.baseline-path }}")
+        fi
+        if [ -n "${{ inputs.write-baseline }}" ]; then
+          args+=(--write-baseline "${{ inputs.write-baseline }}")
+        fi
+
+        if [ -n "${{ inputs.output-file }}" ]; then
+          lokired "${args[@]}" > "${{ inputs.output-file }}"
+        else
+          lokired "${args[@]}"
+        fi
