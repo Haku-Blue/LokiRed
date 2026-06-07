@@ -322,10 +322,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -336,7 +336,9 @@ jobs:
         run: lokired scan . --format text --fail-on high
 ```
 
-To upload SARIF into GitHub code scanning, use:
+To upload SARIF into GitHub code scanning, enable code scanning for the repository first. The checked-in SARIF workflow skips the upload step by default so repositories without code scanning enabled still pass CI. After enabling code scanning, set the repository variable `LOKIRED_UPLOAD_CODE_SCANNING` to `true`.
+
+Example SARIF upload workflow:
 
 ```yaml
 name: LokiRed SARIF
@@ -357,10 +359,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -371,6 +373,7 @@ jobs:
         run: lokired scan . --format sarif --fail-on none > lokired.sarif
 
       - name: Upload SARIF
+        if: vars.LOKIRED_UPLOAD_CODE_SCANNING == 'true' && github.event_name == 'push'
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: lokired.sarif

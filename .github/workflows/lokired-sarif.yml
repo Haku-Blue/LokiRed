@@ -9,6 +9,8 @@ on:
 jobs:
   scan:
     runs-on: ubuntu-latest
+    env:
+      LOKIRED_UPLOAD_CODE_SCANNING: ${{ vars.LOKIRED_UPLOAD_CODE_SCANNING }}
     permissions:
       actions: read
       contents: read
@@ -16,10 +18,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -31,7 +33,8 @@ jobs:
           output-file: "lokired.sarif"
           fail-on: "none"
 
-      - name: Upload SARIF
+      - name: Upload SARIF to GitHub code scanning
+        if: env.LOKIRED_UPLOAD_CODE_SCANNING == 'true' && github.event_name == 'push'
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: lokired.sarif

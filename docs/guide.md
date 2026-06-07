@@ -163,6 +163,8 @@ lokired scan . --format sarif --fail-on none > lokired.sarif
 
 SARIF includes stable rule identifiers, rule metadata, relative artifact URIs when a scan root is known, start lines, remediation text, evidence, severity mappings, and `lokiredFingerprint/v1` partial fingerprints for deduplication.
 
+GitHub SARIF upload requires code scanning to be enabled for the repository. The included `.github/workflows/lokired-sarif.yml` workflow only uploads SARIF on `push` when the repository variable `LOKIRED_UPLOAD_CODE_SCANNING` is set to `true`; otherwise it still generates SARIF and enforces the text scan threshold without calling the CodeQL upload API.
+
 Severity mapping:
 
 - `critical`, `high` -> SARIF `error`
@@ -186,8 +188,8 @@ Inputs:
 Minimal workflow:
 
 ```yaml
-- uses: actions/checkout@v4
-- uses: actions/setup-python@v5
+- uses: actions/checkout@v6
+- uses: actions/setup-python@v6
   with:
     python-version: "3.12"
 - uses: ./
