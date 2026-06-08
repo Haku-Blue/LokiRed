@@ -1,5 +1,9 @@
 # LokiRed
 
+[![LokiRed](https://github.com/HakuBlue/LokiRed/actions/workflows/lokired.yml/badge.svg)](https://github.com/HakuBlue/LokiRed/actions/workflows/lokired.yml)
+[![Tests](https://github.com/HakuBlue/LokiRed/actions/workflows/tests.yml/badge.svg)](https://github.com/HakuBlue/LokiRed/actions/workflows/tests.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 LokiRed is a CLI scanner for AI-agent and MCP configuration risk.
 
 It helps you answer:
@@ -7,6 +11,12 @@ It helps you answer:
 > Which AI coding agents can access which tools, repos, secrets, tokens, and systems, and what risky configuration changes are being introduced?
 
 LokiRed is built for teams using tools such as Codex, Claude Code, Cursor, Windsurf, GitHub Copilot coding agent, and MCP servers. It scans a repository or workspace, finds supported agent configuration files, and reports risky patterns with file paths, line numbers, evidence, severity, and remediation guidance.
+
+## Project Status
+
+LokiRed Community is an early CLI-first MVP. The scanner is deterministic, local-first, and designed to prove useful before any hosted dashboard or cloud workflow is required.
+
+The output schema, supported ecosystems, and rule set may evolve while the project is pre-1.0, but the goal is stable, evidence-first findings that can run repeatably in CI.
 
 ## What LokiRed Checks
 
@@ -462,6 +472,8 @@ This fixture is useful when changing scanner behavior because it checks real-wor
 - CI threshold behavior.
 - Ignored dependency and vendor folders.
 
+When scanning this repository root, `.lokired.yml` suppresses these intentionally risky fixture findings so the public CI checks LokiRed without failing on its own examples. Scanning `test-environment` directly still reports the expected findings above.
+
 ## Running Tests
 
 Run the test suite:
@@ -486,6 +498,12 @@ The tests cover:
 - CLI JSON output and exit codes.
 - GitHub Action metadata.
 - Deterministic output ordering.
+
+## Contributing And Security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, fixture expectations, and pull request guidance.
+
+See [SECURITY.md](SECURITY.md) for responsible vulnerability reporting. Please do not open public issues containing real secrets, private repository contents, or customer configuration.
 
 ## Compatibility Wrapper
 
@@ -566,3 +584,7 @@ Likely next steps:
 - Team inventory dashboard.
 - Runtime MCP gateway or proxy with policy and audit logs.
 
+## License
+
+LokiRed Community is licensed under the Apache License 2.0.
+See `LICENSE` for details.

@@ -5,3 +5,11 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
+.coverage
+htmlcov/
+build/
+dist/
+.venv/
+venv/
+lokired.sarif
+.DS_Store

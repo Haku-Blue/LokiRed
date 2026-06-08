@@ -1,0 +1,46 @@
+name: Bug report
+description: Report a LokiRed crash, incorrect result, or confusing output.
+title: "[bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please use synthetic sample configs only. Do not paste real secrets, tokens, customer config, or private repository contents.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: "0.1.0 or commit SHA"
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: What command did you run?
+      render: shell
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: fixture
+    attributes:
+      label: Minimal synthetic fixture
+      description: Paste a smallest possible sanitized config or instructions file that reproduces the issue.
+      render: text

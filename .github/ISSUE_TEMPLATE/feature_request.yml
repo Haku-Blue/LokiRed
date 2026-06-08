@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest a rule, output format, integration, or supported agent ecosystem.
+title: "[feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or security workflow should LokiRed support?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should LokiRed detect, report, or integrate with?
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - MCP config
+        - Claude Code
+        - Codex
+        - Cursor
+        - Windsurf
+        - GitHub Copilot coding agent
+        - Output/reporting
+        - CI/GitHub Action
+        - Other
+  - type: textarea
+    id: examples
+    attributes:
+      label: Sanitized examples
+      description: Add sanitized sample config, expected findings, or links to public docs.
+      render: text

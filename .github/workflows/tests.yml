@@ -1,4 +1,4 @@
-name: LokiRed
+name: Tests
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  scan:
+  test:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,10 +22,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Scan agent and MCP config
-        uses: ./
-        with:
-          scan-path: "."
-          policy-path: ".lokired.yml"
-          output-format: "text"
-          fail-on: "high"
+      - name: Install LokiRed
+        run: python -m pip install -e .
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
