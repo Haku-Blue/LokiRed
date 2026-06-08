@@ -132,11 +132,6 @@ def format_scan_report(
                 f"   Config type: {_format_config_type(finding['config_type'])}",
                 f"   Line: {finding['line']}",
                 *([f"   {policy_action.strip()}"] if policy_action else []),
-                f"   Risk: {finding['description']}",
-                f"   Evidence: {evidence}",
-                f"   Fingerprint: {finding.get('fingerprint', 'not computed')}",
-                f"   Remediation: {finding['remediation']}",
-                "",
             ]
         )
         lines.extend(_format_text_block("Risk", finding["description"]))

@@ -253,6 +253,8 @@ class InventoryPolicyBaselineTest(unittest.TestCase):
                         "  - rule_id: HARDCODED_SECRET",
                         "    path: mcp-config.json",
                         "    reason: Synthetic CLI fixture credential.",
+                        "    owner: security@example.com",
+                        "    expires: 2099-12-31",
                         "",
                     ]
                 ),
