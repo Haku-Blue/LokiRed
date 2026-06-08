@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/HakuBlue/LokiRed/security
+    about: Please use private vulnerability reporting when available. Do not disclose vulnerabilities or real secrets in public issues.

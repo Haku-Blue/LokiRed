@@ -81,6 +81,25 @@ class ScannerPipelineTest(unittest.TestCase):
         self.assertEqual(sarif_payload["version"], "2.1.0")
         self.assertEqual(len(sarif_payload["runs"][0]["results"]), 4)
 
+    def test_text_report_defaults_to_human_readable_scan_root_context(self) -> None:
+        findings = scan_folder(str(TEST_ENVIRONMENT))
+        text_report = format_scan_report(findings, root_path=str(TEST_ENVIRONMENT))
+
+        self.assertIn(f"File: {Path('mcp-config.json')}", text_report)
+        self.assertNotIn(str(TEST_ENVIRONMENT), text_report)
+        self.assertIn("Config type: Generic MCP configuration", text_report)
+        self.assertIn("Setting: mcpServers.remote-admin.url", text_report)
+        self.assertIn("Server: remote-admin", text_report)
+        self.assertIn("URL: http://mcp-tools.example.com/mcp", text_report)
+        self.assertIn("Endpoint scope: Remote network host", text_report)
+        self.assertNotIn("Fingerprint:", text_report)
+
+    def test_text_report_verbose_includes_fingerprints(self) -> None:
+        findings = scan_folder(str(MOCK_CONFIGS))
+        text_report = format_scan_report(findings, root_path=str(MOCK_CONFIGS), verbose=True)
+
+        self.assertIn("Fingerprint: not computed", text_report)
+
     def test_real_world_environment_detects_expected_risks_without_vendor_noise(self) -> None:
         targets = find_security_config_targets(str(TEST_ENVIRONMENT))
         findings = scan_folder(str(TEST_ENVIRONMENT))

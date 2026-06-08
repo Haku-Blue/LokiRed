@@ -6,13 +6,42 @@ build-backend = "setuptools.build_meta"
 name = "lokired"
 version = "0.1.0"
 description = "CLI scanner for AI-agent and MCP configuration risk."
+readme = "README.md"
 requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Haku Blue" },
+]
+keywords = [
+    "ai-agents",
+    "devsecops",
+    "mcp",
+    "security",
+    "scanner",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = []
 
 [project.optional-dependencies]
 test = [
     "jsonschema>=4.0",
 ]
+[project.urls]
+Homepage = "https://github.com/HakuBlue/LokiRed"
+Repository = "https://github.com/HakuBlue/LokiRed"
+Issues = "https://github.com/HakuBlue/LokiRed/issues"
+Documentation = "https://github.com/HakuBlue/LokiRed/tree/main/docs"
 
 [project.scripts]
 lokired = "lokired:main"

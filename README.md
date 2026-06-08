@@ -1,5 +1,9 @@
 # LokiRed
 
+[![LokiRed](https://github.com/HakuBlue/LokiRed/actions/workflows/lokired.yml/badge.svg)](https://github.com/HakuBlue/LokiRed/actions/workflows/lokired.yml)
+[![Tests](https://github.com/HakuBlue/LokiRed/actions/workflows/tests.yml/badge.svg)](https://github.com/HakuBlue/LokiRed/actions/workflows/tests.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 LokiRed is a CLI scanner for AI-agent and MCP configuration risk.
 
 It helps you answer:
@@ -7,6 +11,12 @@ It helps you answer:
 > Which AI coding agents can access which tools, repos, secrets, tokens, and systems, and what risky configuration changes are being introduced?
 
 LokiRed is built for teams using tools such as Codex, Claude Code, Cursor, Windsurf, GitHub Copilot coding agent, and MCP servers. It scans a repository or workspace, finds supported agent configuration files, and reports risky patterns with file paths, line numbers, evidence, severity, and remediation guidance.
+
+## Project Status
+
+LokiRed Community is an early CLI-first MVP. The scanner is deterministic, local-first, and designed to prove useful before any hosted dashboard or cloud workflow is required.
+
+The output schema, supported ecosystems, and rule set may evolve while the project is pre-1.0, but the goal is stable, evidence-first findings that can run repeatably in CI.
 
 ## What LokiRed Checks
 
@@ -101,13 +111,19 @@ Active issues: 9
 
 1. [CRITICAL] UNSAFE_APPROVAL_MODE
    Title: Agent approvals are disabled
-   File: C:\path\to\repo\.codex\config.toml
-   Config: codex_config
+   File: .codex\config.toml
+   Config type: Codex configuration
    Line: 1
-   Risk: Codex is configured with approval_policy='never', reducing human checkpoints for tool use.
-   Evidence: config_path=approval_policy; value=never
-   Fingerprint: lr1:...
-   Remediation: Use an approval policy that prompts before risky tool use in shared or CI-controlled workspaces.
+
+   Risk:
+   Codex is configured with approval_policy='never', reducing human checkpoints for tool use.
+
+   Evidence:
+   Setting: approval_policy
+   Value: never
+
+   Remediation:
+   Use an approval policy that prompts before risky tool use in shared or CI-controlled workspaces.
 ```
 
 ## Command Reference
@@ -115,7 +131,7 @@ Active issues: 9
 LokiRed has one command:
 
 ```powershell
-lokired scan [folder_path] [--format text|json|sarif] [--fail-on low|medium|high|critical|none] [--policy path] [--baseline path] [--write-baseline path]
+lokired scan [folder_path] [--format text|json|sarif] [--fail-on low|medium|high|critical|none] [--policy path] [--baseline path] [--write-baseline path] [--verbose]
 ```
 
 Arguments:
@@ -126,6 +142,7 @@ Arguments:
 - `--policy`: Optional explicit policy file path. Without this flag, LokiRed discovers `.lokired/policy.yml`, then legacy `.lokired.yml` or `.lokired.yaml` in the scan root when present.
 - `--baseline`: Optional LokiRed baseline JSON file. Findings are classified as `new`, `unchanged`, or `resolved`.
 - `--write-baseline`: Write active findings from the scan to a versioned baseline JSON file.
+- `--verbose`: Show machine-oriented details such as finding fingerprints in text output.
 
 Severity options:
 
@@ -145,6 +162,12 @@ Best for humans reading results in a terminal:
 
 ```powershell
 lokired scan . --format text
+```
+
+Text output uses paths relative to the scan root when possible, expands internal config identifiers into readable labels, and formats evidence across multiple lines. Use `--verbose` when you want fingerprints in the terminal report:
+
+```powershell
+lokired scan . --format text --verbose
 ```
 
 ### JSON
@@ -409,11 +432,11 @@ Each finding includes:
 - `Rule ID`: Stable identifier for the rule that fired.
 - `Title`: Short explanation of the problem.
 - `File`: The file containing the issue.
-- `Config`: The detected config ecosystem.
+- `Config type`: The detected config ecosystem, shown as a readable label in text output.
 - `Line`: Where LokiRed found the evidence.
 - `Risk`: Why the finding matters.
 - `Evidence`: The exact config path, server name, operation, or setting involved.
-- `Fingerprint`: Stable finding identity used by suppressions, baselines, and SARIF.
+- `Fingerprint`: Stable finding identity used by suppressions, baselines, and SARIF. Text output shows this only with `--verbose`; JSON and SARIF always include machine-readable fingerprints.
 - `Remediation`: Practical guidance for fixing it.
 
 Example:
@@ -422,8 +445,14 @@ Example:
 [HIGH] HARDCODED_SECRET
 File: mcp-config.json
 Line: 10
-Evidence: config_path=mcpServers.github.env.GITHUB_TOKEN; key=GITHUB_TOKEN; value=<redacted>
-Remediation: Load this value from a secret manager or environment variable reference instead of committing the secret directly.
+
+Evidence:
+Setting: mcpServers.github.env.GITHUB_TOKEN
+Key: GITHUB_TOKEN
+Value: <redacted>
+
+Remediation:
+Load this value from a secret manager or environment variable reference instead of committing the secret directly.
 ```
 
 Fix:
@@ -462,6 +491,8 @@ This fixture is useful when changing scanner behavior because it checks real-wor
 - CI threshold behavior.
 - Ignored dependency and vendor folders.
 
+When scanning this repository root, `.lokired.yml` suppresses these intentionally risky fixture findings so the public CI checks LokiRed without failing on its own examples. Scanning `test-environment` directly still reports the expected findings above.
+
 ## Running Tests
 
 Run the test suite:
@@ -490,6 +521,12 @@ The tests cover:
 - CLI JSON output and exit codes.
 - GitHub Action metadata.
 - Deterministic output ordering.
+
+## Contributing And Security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, fixture expectations, and pull request guidance.
+
+See [SECURITY.md](SECURITY.md) for responsible vulnerability reporting. Please do not open public issues containing real secrets, private repository contents, or customer configuration.
 
 ## Compatibility Wrapper
 
@@ -570,3 +607,7 @@ Likely next steps:
 - Team inventory dashboard.
 - Runtime MCP gateway or proxy with policy and audit logs.
 
+## License
+
+LokiRed Community is licensed under the Apache License 2.0.
+See `LICENSE` for details.
