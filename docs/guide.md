@@ -19,10 +19,14 @@ JSON output includes `inventory.normalized` with schema version `1.0`.
 
 The schema contains:
 
-- `resources`: Config files, MCP servers, and other discovered resources.
-- `identities`: Agent/config identities that receive access.
-- `permissions`: Raw access discovered from configuration.
-- `bindings`: Links between identities, resources, and permissions.
+- `clients`: Agent/config clients with ecosystem, scope, and config artifact.
+- `servers`: MCP servers with client links, display names, transport, command, arguments, or remote URL when available.
+- `capabilities`: Access derived from permissions, with subject, category, operation, target, and evidence links.
+- `evidence`: Repo-relative source records with line, config path, and redacted details.
+- `resources`: Config files, MCP servers, and other discovered resources retained for compatibility.
+- `identities`: Agent/config identities that receive access retained for compatibility.
+- `permissions`: Raw access discovered from configuration retained for compatibility.
+- `bindings`: Links between identities, resources, and permissions retained for compatibility.
 - `source`: File path, repo-relative path, config type, config path, and line number where available.
 - `metadata`: Counts and source-specific context for debugging.
 
@@ -33,6 +37,10 @@ Example JSON shape:
 ```json
 {
   "schema_version": "1.0",
+  "clients": [],
+  "servers": [],
+  "capabilities": [],
+  "evidence": [],
   "resources": [
     {
       "id": "resource:...",
@@ -65,13 +73,13 @@ Ambiguous configuration is represented honestly. LokiRed uses low severity hints
 
 ## Policy Files
 
-By default, LokiRed looks for `.lokired.yml` or `.lokired.yaml` in the scan root. You can pass an explicit policy path:
+By default, LokiRed looks for `.lokired/policy.yml` in the scan root. Legacy `.lokired.yml` and `.lokired.yaml` are still supported when the canonical file is absent. You can pass an explicit policy path:
 
 ```powershell
 lokired scan . --policy path/to/policy.yml
 ```
 
-Explicit `--policy` wins over default discovery. If no policy file is present, LokiRed uses built-in defaults with no deny rules, no severity overrides, and no suppressions.
+Explicit `--policy` wins over default discovery. If more than one implicit policy file exists, LokiRed exits with status `2` instead of merging files. If no policy file is present, LokiRed uses built-in defaults with no access decisions, no severity overrides, and no suppressions.
 
 Policy files use schema version `1`:
 
@@ -80,22 +88,27 @@ schema_version: 1
 
 access:
   allow:
-    - category: network
-      resource: "local-*"
-  deny:
+    - resource: workspace
+  warn:
+    - resource: "network:*"
+  block:
     - category: secret
       access: read_secret_literal
       severity: critical
       reason: Literal secrets are not allowed in agent config.
+  require-review:
+    - resource: "filesystem:/"
 
 rules:
   INSECURE_REMOTE_MCP:
     severity: high
 ```
 
-Access patterns can match `category`, `access` or `access_level`, `scope`, `exposure`, `resource`, `ecosystem`, and `path`. Values support exact matches or shell-style wildcards. A matching `allow` entry exempts the classification from deny findings, so allow entries should be narrow and reviewable.
+Access patterns can match `category`, `access` or `access_level`, `scope`, `exposure`, `resource`, `ecosystem`, and `path`. Values support exact matches or shell-style wildcards. Supported actions are `allow`, `warn`, `block`, and `require-review`; legacy `deny` is accepted as an alias for `block`.
 
-Malformed policy files exit with status `2` and print an actionable error.
+When multiple actions match, LokiRed uses this precedence: `block`, `require-review`, `warn`, `allow`. `block` and `require-review` create policy findings and enforce CLI failure even with `--fail-on none`. `warn` creates a visible policy finding but does not fail by itself. `allow` permits the matching classified access but does not suppress independent scanner findings.
+
+Malformed policy files, unknown access actions, malformed action values, unsupported pattern-level `action` fields, and unsupported schema versions exit with status `2` and print an actionable error.
 
 ## Suppressions
 
@@ -115,16 +128,19 @@ suppressions:
 Required fields:
 
 - `rule_id`
+- `path`
 - `reason`
-- at least one narrow selector: `fingerprint`, `path`, `config_path`, or `resource`
+- `owner`
+- `expires` in `YYYY-MM-DD`
 
 Optional fields:
 
-- `owner`
-- `expires` in `YYYY-MM-DD`
+- `fingerprint`
+- `config_path`
+- `resource`
 - `ticket`
 
-Expired, malformed, broad wildcard, and unused suppressions are reported under suppression review metadata. Expired suppressions do not continue to suppress findings.
+`fingerprint`, `config_path`, and `resource` can narrow a suppression further, but they do not replace file scope. Expired, malformed, broad wildcard, resource-only, and unused suppressions are reported under suppression review metadata. Expired suppressions do not continue to suppress findings.
 
 ## Baselines
 
@@ -142,12 +158,15 @@ Use a baseline:
 lokired scan . --baseline .lokired-baseline.json --fail-on high
 ```
 
-Baseline files are JSON with schema version `1.0`. They store stable finding fingerprints and minimal diagnostics. In baseline mode:
+Baseline files are JSON with schema version `2.0`. They store stable finding fingerprints, minimal diagnostics, and an `inventory_graph` snapshot. In baseline mode:
 
 - Active findings present in the baseline are `unchanged`.
 - Active findings absent from the baseline are `new`.
 - Baseline findings no longer active are `resolved`.
+- Clients, servers, and capabilities in the graph are compared for `added`, `removed`, `changed`, `expanded`, and `narrowed` deltas.
 - CI thresholds apply to new active findings only.
+
+Legacy schema `1.0` finding-only baselines still load for finding diffing. Graph diff is reported as unavailable until the baseline is regenerated.
 
 Finding fingerprints use rule id, config type, repo-relative path, structured config path when available, and selected evidence such as server/tool/operation/key. Severity and title are excluded so policy severity overrides do not churn baselines. File moves change fingerprints because the repo-relative path is part of the identity. Parser improvements and policy/suppression changes can also change diff results when they add, remove, or transform findings.
 
@@ -162,6 +181,8 @@ lokired scan . --format sarif --fail-on none > lokired.sarif
 ```
 
 SARIF includes stable rule identifiers, rule metadata, relative artifact URIs when a scan root is known, start lines, remediation text, evidence, severity mappings, and `lokiredFingerprint/v1` partial fingerprints for deduplication.
+
+The test suite validates generated SARIF locally against the vendored SARIF 2.1.0 schema at `tests/vendor/sarif/sarif-schema-2.1.0.json`. Tests do not fetch the schema at runtime.
 
 GitHub SARIF upload requires code scanning to be enabled for the repository. The included `.github/workflows/lokired-sarif.yml` workflow only uploads SARIF on `push` when the repository variable `LOKIRED_UPLOAD_CODE_SCANNING` is set to `true`; otherwise it still generates SARIF and enforces the text scan threshold without calling the CodeQL upload API.
 

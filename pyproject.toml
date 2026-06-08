@@ -33,6 +33,10 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+test = [
+    "jsonschema>=4.0",
+]
 [project.urls]
 Homepage = "https://github.com/HakuBlue/LokiRed"
 Repository = "https://github.com/HakuBlue/LokiRed"

@@ -29,6 +29,7 @@ class ScanFinding(TypedDict):
     suppressed: NotRequired[bool]
     suppression: NotRequired[dict[str, Any]]
     policy_original_severity: NotRequired[str]
+    policy_action: NotRequired[str]
 
 
 class ScanTarget(TypedDict):
@@ -105,10 +106,24 @@ def format_scan_report(
             f"unchanged={summary.get('unchanged', 0)}, "
             f"resolved={summary.get('resolved', 0)}"
         )
+        graph_diff = diff.get("inventory_graph", {})
+        if graph_diff.get("available"):
+            graph_summary = graph_diff.get("summary", {})
+            lines.append(
+                "Graph diff: "
+                f"added={graph_summary.get('added', 0)}, "
+                f"removed={graph_summary.get('removed', 0)}, "
+                f"changed={graph_summary.get('changed', 0)}, "
+                f"expanded={graph_summary.get('expanded', 0)}, "
+                f"narrowed={graph_summary.get('narrowed', 0)}"
+            )
+        elif graph_diff:
+            lines.append(f"Graph diff: unavailable ({graph_diff.get('reason', '')})")
     lines.append("")
 
     for index, finding in enumerate(findings, start=1):
         status = f" ({finding['baseline_status']})" if finding.get("baseline_status") else ""
+        policy_action = f" Policy: {finding['policy_action']}" if finding.get("policy_action") else ""
         lines.extend(
             [
                 f"{index}. [{finding['severity'].upper()}] {finding['rule_id']}{status}",
@@ -116,7 +131,7 @@ def format_scan_report(
                 f"   File: {_display_file_path(finding['file_path'], root_path)}",
                 f"   Config type: {_format_config_type(finding['config_type'])}",
                 f"   Line: {finding['line']}",
-                "",
+                *([f"   {policy_action.strip()}"] if policy_action else []),
             ]
         )
         lines.extend(_format_text_block("Risk", finding["description"]))
@@ -163,6 +178,15 @@ def format_scan_report(
             lines.append(
                 f"- [{resolved.get('severity', '').upper()}] {resolved.get('rule_id', '')} "
                 f"{resolved.get('path', '')} {resolved.get('config_path', '')}"
+            )
+        lines.append("")
+
+    graph_diff = diff.get("inventory_graph", {}) if diff else {}
+    if graph_diff.get("available") and graph_diff.get("deltas"):
+        lines.extend(["Inventory graph changes", "-----------------------"])
+        for delta in graph_diff["deltas"]:
+            lines.append(
+                f"- [{delta.get('change_type', '')}] {delta.get('entity', '')}: {delta.get('key', '')}"
             )
         lines.append("")
 

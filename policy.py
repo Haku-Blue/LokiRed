@@ -7,6 +7,7 @@ import json
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date, datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -16,9 +17,21 @@ from rule_catalog import RULE_CATALOG
 
 
 POLICY_SCHEMA_VERSION = "1.0"
-DEFAULT_POLICY_FILENAMES = (".lokired.yml", ".lokired.yaml")
+DEFAULT_POLICY_FILENAMES = (".lokired/policy.yml", ".lokired.yml", ".lokired.yaml")
 SEVERITIES = {"low", "medium", "high", "critical"}
 SUPPRESSION_SELECTOR_KEYS = ("fingerprint", "path", "config_path", "resource")
+POLICY_ACCESS_ACTIONS = ("allow", "warn", "block", "require-review")
+LEGACY_ACCESS_ACTIONS = {"deny": "block"}
+POLICY_DECISION_PRECEDENCE = ("block", "require-review", "warn", "allow")
+
+
+class PolicyAction(str, Enum):
+    """Canonical access policy actions."""
+
+    ALLOW = "allow"
+    WARN = "warn"
+    BLOCK = "block"
+    REQUIRE_REVIEW = "require-review"
 
 
 class PolicyError(ValueError):
@@ -176,6 +189,19 @@ def _discover_policy_path(root_path: str, explicit_policy_path: str | None) -> P
         return path.resolve()
 
     root = Path(root_path).resolve()
+    discovered = [
+        root / filename
+        for filename in DEFAULT_POLICY_FILENAMES
+        if (root / filename).is_file()
+    ]
+    if len(discovered) > 1:
+        names = ", ".join(path.as_posix() for path in discovered)
+        precedence = ", ".join(DEFAULT_POLICY_FILENAMES)
+        raise PolicyError(
+            "Multiple LokiRed policy files found; use --policy to select one "
+            f"or remove lower-precedence files. Found: {names}. "
+            f"Discovery precedence is: {precedence}."
+        )
     for filename in DEFAULT_POLICY_FILENAMES:
         candidate = root / filename
         if candidate.is_file():
@@ -187,7 +213,7 @@ def _default_policy() -> Policy:
     return {
         "schema_version": POLICY_SCHEMA_VERSION,
         "source_path": None,
-        "access": {"allow": [], "deny": []},
+        "access": {action.value: [] for action in PolicyAction},
         "rules": {},
         "suppressions": [],
         "invalid_suppressions": [],
@@ -223,10 +249,7 @@ def _validate_policy(value: Any, source_path: str) -> Policy:
     if not isinstance(access_value, dict):
         raise PolicyError("Policy field 'access' must be a mapping.")
 
-    access = {
-        "allow": _validate_access_patterns(access_value.get("allow", []), "access.allow"),
-        "deny": _validate_access_patterns(access_value.get("deny", []), "access.deny"),
-    }
+    access = _validate_access_config(access_value)
 
     rules = _validate_rule_config(value.get("rules", {}))
     suppressions, invalid_suppressions = _validate_suppressions(value.get("suppressions", []), source_path)
@@ -241,6 +264,29 @@ def _validate_policy(value: Any, source_path: str) -> Policy:
     }
 
 
+def _validate_access_config(value: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    allowed_keys = {*POLICY_ACCESS_ACTIONS, *LEGACY_ACCESS_ACTIONS}
+    unknown_keys = sorted(str(key) for key in value if key not in allowed_keys)
+    if unknown_keys:
+        raise PolicyError(
+            "Policy field 'access' contains unknown action "
+            f"{unknown_keys[0]!r}; expected one of {sorted(POLICY_ACCESS_ACTIONS)}."
+        )
+
+    access = {
+        action: _validate_access_patterns(value.get(action, []), f"access.{action}")
+        for action in POLICY_ACCESS_ACTIONS
+    }
+    for legacy_action, canonical_action in LEGACY_ACCESS_ACTIONS.items():
+        legacy_patterns = _validate_access_patterns(
+            value.get(legacy_action, []),
+            f"access.{legacy_action}",
+        )
+        if legacy_patterns:
+            access[canonical_action].extend(legacy_patterns)
+    return access
+
+
 def _validate_access_patterns(value: Any, field_name: str) -> list[dict[str, Any]]:
     if value is None:
         return []
@@ -250,6 +296,11 @@ def _validate_access_patterns(value: Any, field_name: str) -> list[dict[str, Any
     for index, pattern in enumerate(value):
         if not isinstance(pattern, dict):
             raise PolicyError(f"Policy field '{field_name}[{index}]' must be a mapping.")
+        if "action" in pattern:
+            raise PolicyError(
+                f"Policy field '{field_name}[{index}].action' is not supported; "
+                "place patterns under access.allow, access.warn, access.block, or access.require-review."
+            )
         if "severity" in pattern and pattern["severity"] not in SEVERITIES:
             raise PolicyError(f"Policy field '{field_name}[{index}].severity' must be one of {sorted(SEVERITIES)}.")
         patterns.append(dict(pattern))
@@ -308,25 +359,35 @@ def _validate_suppressions(value: Any, source_path: str) -> tuple[list[dict[str,
 
 
 def _suppression_validation_message(suppression: dict[str, Any]) -> str | None:
-    if not suppression.get("rule_id"):
+    rule_id = suppression.get("rule_id")
+    if not isinstance(rule_id, str) or not rule_id.strip():
         return "Suppression requires a rule_id."
-    if suppression.get("rule_id") not in RULE_CATALOG:
-        return f"Suppression references unknown rule id {suppression.get('rule_id')!r}."
-    reason = str(suppression.get("reason", "")).strip()
-    if not reason:
+    if rule_id not in RULE_CATALOG:
+        return f"Suppression references unknown rule id {rule_id!r}."
+    path = suppression.get("path")
+    if not isinstance(path, str) or not path.strip():
+        return "Suppression requires a non-empty path."
+    reason = suppression.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
         return "Suppression requires a non-empty reason."
-    if not any(suppression.get(key) for key in SUPPRESSION_SELECTOR_KEYS):
-        return "Suppression requires at least one narrow selector: fingerprint, path, config_path, or resource."
+    owner = suppression.get("owner")
+    if not isinstance(owner, str) or not owner.strip():
+        return "Suppression requires a non-empty owner."
+    expires = suppression.get("expires")
+    if not isinstance(expires, str) or not expires.strip():
+        return "Suppression requires an expires date in YYYY-MM-DD."
+    try:
+        _parse_date(expires)
+    except ValueError:
+        return "Suppression expires must use YYYY-MM-DD."
     for key in SUPPRESSION_SELECTOR_KEYS:
         selector = suppression.get(key)
+        if selector is None:
+            continue
+        if not isinstance(selector, str) or not selector.strip():
+            return f"Suppression selector {key!r} must be a non-empty string."
         if selector in {"*", "**"}:
             return f"Suppression selector {key!r} is too broad."
-    expires = suppression.get("expires")
-    if expires is not None:
-        try:
-            _parse_date(str(expires))
-        except ValueError:
-            return "Suppression expires must use YYYY-MM-DD."
     return None
 
 
@@ -335,55 +396,86 @@ def _build_policy_findings(
     policy: Policy,
     root_path: str | None,
 ) -> list[dict[str, Any]]:
-    allow_patterns = policy.get("access", {}).get("allow", [])
-    deny_patterns = policy.get("access", {}).get("deny", [])
+    access_patterns = policy.get("access", {})
     findings: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
 
     for classification in classifications:
-        if any(_classification_matches(pattern, classification, root_path) for pattern in allow_patterns):
+        decision = _policy_decision_for_classification(access_patterns, classification, root_path)
+        if decision is None:
             continue
-        for pattern_index, pattern in enumerate(deny_patterns):
-            if not _classification_matches(pattern, classification, root_path):
-                continue
-            key = (classification["id"], str(pattern_index))
-            if key in seen:
-                continue
-            seen.add(key)
-            severity = str(pattern.get("severity") or classification.get("severity_hint") or "medium")
-            if severity not in SEVERITIES:
-                severity = "medium"
-            source = classification["source"]
-            reason = str(pattern.get("reason", "Access is denied by repository policy."))
-            findings.append(
-                {
-                    "file_path": source.get("file_path", ""),
-                    "config_type": source.get("config_type", classification.get("ecosystem", "policy")),
-                    "severity": severity,
-                    "title": str(pattern.get("title", "Access denied by LokiRed policy")),
-                    "description": (
-                        f"{classification['explanation']} Policy reason: {reason}"
-                    ),
-                    "line": int(source.get("line", 1)),
-                    "rule_id": "POLICY_DENIED_ACCESS",
-                    "evidence": {
-                        "config_path": str(source.get("config_path", "")),
-                        "classification": classification["id"],
-                        "category": classification["category"],
-                        "access": classification["access_level"],
-                        "scope": classification["scope"],
-                        "resource": classification.get("resource_name", ""),
-                        "policy_reason": reason,
-                    },
-                    "remediation": str(
-                        pattern.get(
-                            "remediation",
-                            "Remove or narrow this agent access, or add a more specific accountable policy allow entry.",
-                        )
-                    ),
-                }
-            )
+        action, pattern_index, pattern = decision
+        if action == PolicyAction.ALLOW.value:
+            continue
+        key = (classification["id"], f"{action}:{pattern_index}")
+        if key in seen:
+            continue
+        seen.add(key)
+        severity = str(pattern.get("severity") or classification.get("severity_hint") or "medium")
+        if severity not in SEVERITIES:
+            severity = "medium"
+        source = classification["source"]
+        default_reason = {
+            PolicyAction.BLOCK.value: "Access is blocked by repository policy.",
+            PolicyAction.REQUIRE_REVIEW.value: "Access requires review by repository policy.",
+            PolicyAction.WARN.value: "Access is warned by repository policy.",
+        }[action]
+        reason = str(pattern.get("reason", default_reason))
+        findings.append(
+            {
+                "file_path": source.get("file_path", ""),
+                "config_type": source.get("config_type", classification.get("ecosystem", "policy")),
+                "severity": severity,
+                "title": str(pattern.get("title", _policy_finding_title(action))),
+                "description": (
+                    f"{classification['explanation']} Policy decision: {action}. Policy reason: {reason}"
+                ),
+                "line": int(source.get("line", 1)),
+                "rule_id": "POLICY_DENIED_ACCESS",
+                "policy_action": action,
+                "evidence": {
+                    "config_path": str(source.get("config_path", "")),
+                    "classification": classification["id"],
+                    "category": classification["category"],
+                    "access": classification["access_level"],
+                    "scope": classification["scope"],
+                    "resource": classification.get("resource_name", ""),
+                    "policy_action": action,
+                    "policy_reason": reason,
+                },
+                "remediation": str(
+                    pattern.get(
+                        "remediation",
+                        (
+                            "Complete the required policy review or narrow this agent access."
+                            if action == PolicyAction.REQUIRE_REVIEW.value
+                            else "Remove or narrow this agent access, or add a more specific accountable policy allow entry."
+                        ),
+                    )
+                ),
+            }
+        )
     return findings
+
+
+def _policy_decision_for_classification(
+    access_patterns: dict[str, list[dict[str, Any]]],
+    classification: PermissionClassification,
+    root_path: str | None,
+) -> tuple[str, int, dict[str, Any]] | None:
+    for action in POLICY_DECISION_PRECEDENCE:
+        for pattern_index, pattern in enumerate(access_patterns.get(action, [])):
+            if _classification_matches(pattern, classification, root_path):
+                return action, pattern_index, pattern
+    return None
+
+
+def _policy_finding_title(action: str) -> str:
+    return {
+        PolicyAction.BLOCK.value: "Access blocked by LokiRed policy",
+        PolicyAction.REQUIRE_REVIEW.value: "Access requires review by LokiRed policy",
+        PolicyAction.WARN.value: "Access warned by LokiRed policy",
+    }[action]
 
 
 def _apply_severity_overrides(
@@ -443,13 +535,17 @@ def _classification_matches(
         "access_level": classification.get("access_level", ""),
         "scope": classification.get("scope", ""),
         "exposure": classification.get("exposure", ""),
-        "resource": classification.get("resource_name", ""),
         "ecosystem": classification.get("ecosystem", ""),
         "path": _classification_path(classification, root_path),
     }
     for key, actual in checks.items():
         if key in pattern and not _selector_matches(pattern[key], actual):
             return False
+    if "resource" in pattern and not _selector_matches_any(
+        pattern["resource"],
+        _classification_resource_values(classification),
+    ):
+        return False
     return True
 
 
@@ -473,6 +569,34 @@ def _selector_matches(expected: Any, actual: str) -> bool:
     if isinstance(expected, list):
         return any(_selector_matches(item, actual) for item in expected)
     return _glob_match(str(expected), actual)
+
+
+def _selector_matches_any(expected: Any, actual_values: list[str]) -> bool:
+    return any(_selector_matches(expected, actual) for actual in actual_values)
+
+
+def _classification_resource_values(classification: PermissionClassification) -> list[str]:
+    category = str(classification.get("category", ""))
+    access = str(classification.get("access_level", ""))
+    scope = str(classification.get("scope", ""))
+    exposure = str(classification.get("exposure", ""))
+    resource_name = str(classification.get("resource_name", ""))
+    values = {
+        resource_name,
+        scope,
+        exposure,
+        category,
+        f"{category}:{scope}",
+        f"{category}:{access}",
+        f"{category}:{exposure}",
+    }
+    if category == "filesystem":
+        if access == "full_access":
+            values.add("filesystem:/")
+        if scope == "workspace":
+            values.add("workspace")
+            values.add("filesystem:workspace")
+    return sorted(value for value in values if value)
 
 
 def _glob_match(expected: str, actual: str) -> bool:

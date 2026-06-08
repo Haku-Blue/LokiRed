@@ -83,10 +83,60 @@ class InventoryBinding(TypedDict, total=False):
     metadata: dict[str, Any]
 
 
+class InventoryClient(TypedDict, total=False):
+    """First-class normalized graph client."""
+
+    id: str
+    ecosystem: str
+    config_scope: str
+    config_artifact: str
+    evidence_ids: list[str]
+
+
+class InventoryServer(TypedDict, total=False):
+    """First-class normalized graph MCP server."""
+
+    id: str
+    client_id: str
+    display_name: str
+    transport: str
+    command: str
+    arguments: list[str]
+    remote_url: str
+    config_scope: str
+    evidence_ids: list[str]
+
+
+class InventoryCapability(TypedDict, total=False):
+    """First-class normalized graph capability."""
+
+    id: str
+    subject_id: str
+    category: str
+    operation: str
+    access_level: str
+    target: str
+    evidence_ids: list[str]
+
+
+class InventoryEvidence(TypedDict, total=False):
+    """First-class normalized graph evidence record."""
+
+    id: str
+    path: str
+    line: int
+    config_path: str
+    details: dict[str, Any]
+
+
 class NormalizedInventory(TypedDict):
     """Stable inventory contract emitted by scanner parsers."""
 
     schema_version: str
+    clients: list[InventoryClient]
+    servers: list[InventoryServer]
+    capabilities: list[InventoryCapability]
+    evidence: list[InventoryEvidence]
     resources: list[InventoryResource]
     identities: list[InventoryIdentity]
     permissions: list[InventoryPermission]
@@ -407,6 +457,22 @@ class _InventoryBuilder:
             server_name,
         )
         source = self._source(target, config_text, server_path)
+        command = server.get("command")
+        args = server.get("args")
+        url = server.get("url") or server.get("serverUrl")
+        metadata: dict[str, Any] = {
+            "config_path": config_path,
+            "parent_resource_id": file_resource_id,
+        }
+        if isinstance(command, str):
+            metadata["command"] = command
+        if isinstance(args, list):
+            metadata["arguments"] = [str(arg) for arg in args]
+        if isinstance(url, str):
+            metadata["remote_url"] = url
+            metadata["transport"] = "http" if url.startswith("http://") else "https" if url.startswith("https://") else "remote"
+        elif isinstance(command, str) or isinstance(args, list):
+            metadata["transport"] = "stdio"
         self._add_resource(
             {
                 "id": server_resource_id,
@@ -414,15 +480,10 @@ class _InventoryBuilder:
                 "name": server_name,
                 "ecosystem": target["config_type"],
                 "source": source,
-                "metadata": {
-                    "config_path": config_path,
-                    "parent_resource_id": file_resource_id,
-                },
+                "metadata": metadata,
             }
         )
 
-        command = server.get("command")
-        args = server.get("args")
         if isinstance(command, str) or isinstance(args, list):
             command_parts = [str(command)] if isinstance(command, str) else []
             if isinstance(args, list):
@@ -439,7 +500,6 @@ class _InventoryBuilder:
                 {"server": server_name, "command": " ".join(command_parts)},
             )
 
-        url = server.get("url") or server.get("serverUrl")
         if isinstance(url, str):
             url_key = "url" if "url" in server else "serverUrl"
             self._add_permission(
@@ -644,17 +704,30 @@ class _InventoryBuilder:
         self.bindings.append(binding)
 
     def to_inventory(self) -> NormalizedInventory:
+        resources = sorted(self.resources, key=_record_sort_key)
+        identities = sorted(self.identities, key=_record_sort_key)
+        permissions = sorted(self.permissions, key=_record_sort_key)
+        bindings = sorted(self.bindings, key=_record_sort_key)
+        graph = _build_explicit_graph(resources, identities, permissions, bindings)
         return {
             "schema_version": INVENTORY_SCHEMA_VERSION,
-            "resources": sorted(self.resources, key=_record_sort_key),
-            "identities": sorted(self.identities, key=_record_sort_key),
-            "permissions": sorted(self.permissions, key=_record_sort_key),
-            "bindings": sorted(self.bindings, key=_record_sort_key),
+            "clients": graph["clients"],
+            "servers": graph["servers"],
+            "capabilities": graph["capabilities"],
+            "evidence": graph["evidence"],
+            "resources": resources,
+            "identities": identities,
+            "permissions": permissions,
+            "bindings": bindings,
             "metadata": {
                 "resource_count": len(self.resources),
                 "identity_count": len(self.identities),
                 "permission_count": len(self.permissions),
                 "binding_count": len(self.bindings),
+                "client_count": len(graph["clients"]),
+                "server_count": len(graph["servers"]),
+                "capability_count": len(graph["capabilities"]),
+                "evidence_count": len(graph["evidence"]),
             },
         }
 
@@ -666,6 +739,181 @@ def _relative_path(file_path: Path, root: Path | None) -> str:
         except ValueError:
             pass
     return file_path.as_posix()
+
+
+def inventory_graph_snapshot(inventory: dict[str, Any]) -> dict[str, Any]:
+    """Return the explicit normalized graph subset used by baselines."""
+    return {
+        "schema_version": INVENTORY_SCHEMA_VERSION,
+        "clients": list(inventory.get("clients", [])),
+        "servers": list(inventory.get("servers", [])),
+        "capabilities": list(inventory.get("capabilities", [])),
+        "evidence": list(inventory.get("evidence", [])),
+    }
+
+
+def _build_explicit_graph(
+    resources: list[InventoryResource],
+    identities: list[InventoryIdentity],
+    permissions: list[InventoryPermission],
+    bindings: list[InventoryBinding],
+) -> dict[str, list[dict[str, Any]]]:
+    evidence_by_key: dict[tuple[str, int, str, str], InventoryEvidence] = {}
+
+    def evidence_for(source: SourceLocation, details: dict[str, Any]) -> str:
+        relative_path = str(source.get("relative_path", source.get("file_path", "")))
+        config_path = str(source.get("config_path", ""))
+        line = int(source.get("line", 1))
+        safe_details = _redact_details(details)
+        evidence_id = _stable_id(
+            "evidence",
+            relative_path,
+            str(line),
+            config_path,
+            json.dumps(safe_details, sort_keys=True, separators=(",", ":")),
+        )
+        key = (relative_path, line, config_path, evidence_id)
+        evidence_by_key.setdefault(
+            key,
+            {
+                "id": evidence_id,
+                "path": relative_path,
+                "line": line,
+                "config_path": config_path,
+                "details": safe_details,
+            },
+        )
+        return evidence_id
+
+    clients: list[InventoryClient] = []
+    source_client_ids: dict[tuple[str, str], str] = {}
+    for identity in identities:
+        source = identity.get("source", {})
+        ecosystem = str(identity.get("metadata", {}).get("ecosystem", source.get("config_type", "")))
+        relative_path = str(source.get("relative_path", identity.get("name", "")))
+        evidence_id = evidence_for(source, {"kind": "client", "name": identity.get("name", "")})
+        clients.append(
+            {
+                "id": identity["id"],
+                "ecosystem": ecosystem,
+                "config_scope": "workspace",
+                "config_artifact": relative_path,
+                "evidence_ids": [evidence_id],
+            }
+        )
+        source_client_ids[(relative_path, ecosystem)] = identity["id"]
+
+    binding_client_by_resource: dict[str, str] = {}
+    for binding in bindings:
+        binding_client_by_resource.setdefault(binding["resource_id"], binding["identity_id"])
+
+    servers: list[InventoryServer] = []
+    resource_by_id = {resource["id"]: resource for resource in resources}
+    for resource in resources:
+        if resource.get("kind") != "mcp_server":
+            continue
+        source = resource.get("source", {})
+        ecosystem = str(resource.get("ecosystem", source.get("config_type", "")))
+        relative_path = str(source.get("relative_path", ""))
+        metadata = resource.get("metadata", {})
+        client_id = (
+            binding_client_by_resource.get(resource["id"])
+            or source_client_ids.get((relative_path, ecosystem))
+            or source_client_ids.get((relative_path, str(source.get("config_type", ""))))
+            or ""
+        )
+        evidence_id = evidence_for(
+            source,
+            {
+                "kind": "server",
+                "display_name": resource.get("name", ""),
+                "transport": metadata.get("transport", ""),
+            },
+        )
+        server: InventoryServer = {
+            "id": resource["id"],
+            "client_id": client_id,
+            "display_name": str(resource.get("name", "")),
+            "config_scope": "workspace",
+            "evidence_ids": [evidence_id],
+        }
+        for optional_key in ("transport", "command", "remote_url"):
+            if optional_key in metadata:
+                server[optional_key] = str(metadata[optional_key])  # type: ignore[literal-required]
+        if isinstance(metadata.get("arguments"), list):
+            server["arguments"] = [str(arg) for arg in metadata["arguments"]]
+        servers.append(server)
+
+    capabilities: list[InventoryCapability] = []
+    for permission in permissions:
+        source = permission.get("source", {})
+        raw = permission.get("raw", {})
+        subject_id = permission.get("resource_id", "")
+        evidence_id = evidence_for(
+            source,
+            {
+                "kind": "capability",
+                "category": permission.get("category", ""),
+                "operation": permission.get("access", ""),
+                "target": _capability_target(permission, resource_by_id.get(subject_id, {})),
+                "raw": raw,
+            },
+        )
+        capabilities.append(
+            {
+                "id": permission["id"],
+                "subject_id": subject_id,
+                "category": str(permission.get("category", "")),
+                "operation": str(permission.get("access", "")),
+                "access_level": str(permission.get("access", "")),
+                "target": _capability_target(permission, resource_by_id.get(subject_id, {})),
+                "evidence_ids": [evidence_id],
+            }
+        )
+
+    return {
+        "clients": sorted(clients, key=_graph_sort_key),
+        "servers": sorted(servers, key=_graph_sort_key),
+        "capabilities": sorted(capabilities, key=_graph_sort_key),
+        "evidence": sorted(evidence_by_key.values(), key=_graph_sort_key),
+    }
+
+
+def _capability_target(permission: InventoryPermission, resource: InventoryResource) -> str:
+    category = str(permission.get("category", ""))
+    access = str(permission.get("access", ""))
+    scope = str(permission.get("scope", ""))
+    raw = permission.get("raw", {})
+    if category == "filesystem" and access in {"danger-full-access", ":danger-full-access", "full_access"}:
+        return "/"
+    if category == "network" and isinstance(raw.get("url"), str):
+        return str(raw["url"])
+    if category in {"secret", "environment"} and isinstance(raw.get("key"), str):
+        return str(raw["key"])
+    if isinstance(raw.get("tool"), str):
+        return str(raw["tool"])
+    if isinstance(raw.get("server"), str):
+        return str(raw["server"])
+    return scope or str(resource.get("name", ""))
+
+
+def _redact_details(value: Any) -> Any:
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, child in value.items():
+            if str(key).lower() == "value" and (
+                SECRET_KEY_PATTERN.search(str(value.get("key", "")))
+                or SECRET_VALUE_PATTERN.search(str(child))
+            ):
+                redacted[str(key)] = "<redacted>"
+            else:
+                redacted[str(key)] = _redact_details(child)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_details(item) for item in value]
+    if isinstance(value, str) and SECRET_VALUE_PATTERN.search(value):
+        return "<redacted>"
+    return value
 
 
 def _stable_id(prefix: str, *parts: str) -> str:
@@ -680,5 +928,14 @@ def _record_sort_key(record: dict[str, Any]) -> tuple[str, str, str, str]:
         str(source.get("relative_path", "")),
         str(record.get("kind", record.get("category", ""))),
         str(record.get("name", record.get("access", ""))),
+        str(record.get("id", "")),
+    )
+
+
+def _graph_sort_key(record: dict[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        str(record.get("path", record.get("config_artifact", ""))),
+        str(record.get("category", record.get("display_name", record.get("ecosystem", "")))),
+        str(record.get("config_path", record.get("target", ""))),
         str(record.get("id", "")),
     )
