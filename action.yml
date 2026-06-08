@@ -1,6 +1,9 @@
 name: LokiRed Scan
 description: Scan AI-agent and MCP configuration risk with the local LokiRed CLI.
 author: LokiRed
+branding:
+  icon: shield
+  color: red
 
 inputs:
   scan-path:

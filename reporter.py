@@ -43,6 +43,7 @@ def format_scan_report(
     suppressed_findings: list[ScanFinding] | None = None,
     invalid_suppressions: list[dict[str, Any]] | None = None,
     diff: dict[str, Any] | None = None,
+    root_path: str | None = None,
 ) -> str:
     """Build a readable text report from scanner findings."""
     suppressed_findings = suppressed_findings or []
@@ -77,7 +78,7 @@ def format_scan_report(
             [
                 f"{index}. [{finding['severity'].upper()}] {finding['rule_id']}{status}",
                 f"   Title: {finding['title']}",
-                f"   File: {finding['file_path']}",
+                f"   File: {_display_file_path(finding['file_path'], root_path)}",
                 f"   Config: {finding['config_type']}",
                 f"   Line: {finding['line']}",
                 f"   Risk: {finding['description']}",
@@ -95,7 +96,7 @@ def format_scan_report(
             lines.extend(
                 [
                     f"{index}. [{finding['severity'].upper()}] {finding['rule_id']}",
-                    f"   File: {finding['file_path']}",
+                    f"   File: {_display_file_path(finding['file_path'], root_path)}",
                     f"   Line: {finding['line']}",
                     f"   Reason: {suppression.get('reason', '')}",
                     f"   Owner: {suppression.get('owner', '')}",
@@ -306,6 +307,7 @@ def print_scan_report(
     suppressed_findings: list[ScanFinding] | None = None,
     invalid_suppressions: list[dict[str, Any]] | None = None,
     diff: dict[str, Any] | None = None,
+    root_path: str | None = None,
 ) -> None:
     """Print scanner findings to stdout."""
     print(
@@ -314,6 +316,7 @@ def print_scan_report(
             suppressed_findings=suppressed_findings,
             invalid_suppressions=invalid_suppressions,
             diff=diff,
+            root_path=root_path,
         )
     )
 
@@ -343,6 +346,17 @@ def _sarif_artifact_uri(file_path: str, root: Path | None) -> str:
         except ValueError:
             pass
     return path.as_posix()
+
+
+def _display_file_path(file_path: str, root_path: str | None) -> str:
+    path = Path(file_path)
+    if root_path is not None:
+        root = Path(root_path).resolve()
+        try:
+            return str(path.resolve().relative_to(root))
+        except ValueError:
+            pass
+    return str(path)
 
 
 def _format_evidence(evidence: dict[str, str]) -> str:

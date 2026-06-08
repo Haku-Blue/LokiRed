@@ -229,6 +229,52 @@ class InventoryPolicyBaselineTest(unittest.TestCase):
             self.assertEqual(completed.returncode, 2)
             self.assertIn("Unsupported policy schema_version", completed.stderr)
 
+    def test_cli_suppressed_findings_use_relative_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_mcp_config(
+                root,
+                {
+                    "mcpServers": {
+                        "leaky": {"env": {"OPENAI_API_KEY": "sk-relativepath123"}}
+                    }
+                },
+            )
+            (root / ".lokired.yml").write_text(
+                "\n".join(
+                    [
+                        "schema_version: 1",
+                        "suppressions:",
+                        "  - rule_id: HARDCODED_SECRET",
+                        "    path: mcp-config.json",
+                        "    reason: Synthetic CLI fixture credential.",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "lokired",
+                    "scan",
+                    str(root),
+                    "--fail-on",
+                    "high",
+                ],
+                cwd=PROJECT_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(completed.returncode, 0)
+            self.assertIn("Suppressed issues: 1", completed.stdout)
+            self.assertIn("File: mcp-config.json", completed.stdout)
+            self.assertNotIn(str(root), completed.stdout)
+
     def test_sarif_has_relative_locations_and_stable_fingerprints(self) -> None:
         result = execute_scan(str(AGENT_SURFACES))
         sarif = json.loads(format_sarif_report(result["active_findings"], str(AGENT_SURFACES)))

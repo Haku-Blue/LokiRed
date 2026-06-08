@@ -1,0 +1,67 @@
+schema_version: 1
+
+suppressions:
+  - rule_id: DESTRUCTIVE_PERMISSION
+    path: mock_configs/**
+    reason: Intentional synthetic fixture used to validate scanner behavior.
+    owner: lokired-maintainers
+  - rule_id: HARDCODED_SECRET
+    path: mock_configs/**
+    reason: Intentional synthetic fixture used to validate scanner behavior.
+    owner: lokired-maintainers
+  - rule_id: UNSAFE_APPROVAL_MODE
+    path: test-environment/**
+    reason: Intentional synthetic fixture used to demonstrate scanner output.
+    owner: lokired-maintainers
+  - rule_id: DANGER_FULL_ACCESS
+    path: test-environment/**
+    reason: Intentional synthetic fixture used to demonstrate scanner output.
+    owner: lokired-maintainers
+  - rule_id: INSECURE_REMOTE_MCP
+    path: test-environment/**
+    reason: Intentional synthetic fixture used to demonstrate scanner output.
+    owner: lokired-maintainers
+  - rule_id: MCP_AUTO_APPROVAL
+    path: test-environment/**
+    reason: Intentional synthetic fixture used to demonstrate scanner output.
+    owner: lokired-maintainers
+  - rule_id: DESTRUCTIVE_PERMISSION
+    path: test-environment/**
+    reason: Intentional synthetic fixture used to demonstrate scanner output.
+    owner: lokired-maintainers
+  - rule_id: HARDCODED_SECRET
+    path: test-environment/**
+    reason: Intentional synthetic fixture used to demonstrate scanner output.
+    owner: lokired-maintainers
+  - rule_id: UNSAFE_APPROVAL_MODE
+    path: tests/fixtures/agent_surfaces/**
+    reason: Intentional synthetic fixture used to validate scanner behavior.
+    owner: lokired-maintainers
+  - rule_id: OVERBROAD_TOOL_ALLOW
+    path: tests/fixtures/agent_surfaces/**
+    reason: Intentional synthetic fixture used to validate scanner behavior.
+    owner: lokired-maintainers
+  - rule_id: DESTRUCTIVE_PERMISSION
+    path: tests/fixtures/agent_surfaces/**
+    reason: Intentional synthetic fixture used to validate scanner behavior.
+    owner: lokired-maintainers
+  - rule_id: MCP_AUTO_ENABLE_PROJECT_SERVERS
+    path: tests/fixtures/agent_surfaces/**
+    reason: Intentional synthetic fixture used to validate scanner behavior.
+    owner: lokired-maintainers
+  - rule_id: INSECURE_REMOTE_MCP
+    path: tests/fixtures/agent_surfaces/**
+    reason: Intentional synthetic fixture used to validate scanner behavior.
+    owner: lokired-maintainers
+  - rule_id: HARDCODED_SECRET
+    path: tests/fixtures/agent_surfaces/**
+    reason: Intentional synthetic fixture used to validate scanner behavior.
+    owner: lokired-maintainers
+  - rule_id: DANGER_FULL_ACCESS
+    path: tests/fixtures/agent_surfaces/**
+    reason: Intentional synthetic fixture used to validate scanner behavior.
+    owner: lokired-maintainers
+  - rule_id: MCP_AUTO_APPROVAL
+    path: tests/fixtures/agent_surfaces/**
+    reason: Intentional synthetic fixture used to validate scanner behavior.
+    owner: lokired-maintainers

@@ -29,6 +29,7 @@ jobs:
         uses: ./
         with:
           scan-path: "."
+          policy-path: ".lokired.yml"
           output-format: "sarif"
           output-file: "lokired.sarif"
           fail-on: "none"
@@ -43,5 +44,6 @@ jobs:
         uses: ./
         with:
           scan-path: "."
+          policy-path: ".lokired.yml"
           output-format: "text"
           fail-on: "high"

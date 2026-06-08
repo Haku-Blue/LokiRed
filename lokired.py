@@ -158,6 +158,7 @@ def run_scan(
             suppressed_findings=result["suppressed_findings"],
             invalid_suppressions=result["invalid_suppressions"],
             diff=result["diff"],
+            root_path=root,
         )
 
     return 1 if should_fail_on_findings(findings, fail_on, only_new=baseline_path is not None) else 0
