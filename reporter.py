@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import textwrap
 from collections import Counter
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict
@@ -37,6 +38,40 @@ class ScanTarget(TypedDict):
     config_type: str
 
 
+CONFIG_TYPE_LABELS = {
+    "agent_instructions": "Agent instructions",
+    "claude_mcp": "Claude MCP configuration",
+    "claude_settings": "Claude Code settings",
+    "codex_config": "Codex configuration",
+    "cursor_legacy_rules": "Cursor legacy rules",
+    "cursor_mcp": "Cursor MCP configuration",
+    "cursor_rules": "Cursor rules",
+    "generic_mcp": "Generic MCP configuration",
+    "github_copilot_instructions": "GitHub Copilot instructions",
+    "github_copilot_prompt": "GitHub Copilot prompt",
+    "github_copilot_setup": "GitHub Copilot setup workflow",
+    "policy": "LokiRed policy",
+    "windsurf_mcp": "Windsurf MCP configuration",
+}
+
+EVIDENCE_LABELS = {
+    "access": "Access",
+    "category": "Category",
+    "classification": "Classification",
+    "config_path": "Setting",
+    "key": "Key",
+    "operation": "Operation",
+    "parse_error": "Parse error",
+    "policy_reason": "Policy reason",
+    "resource": "Resource",
+    "scope": "Scope",
+    "server": "Server",
+    "snippet": "Snippet",
+    "url": "URL",
+    "value": "Value",
+}
+
+
 def format_scan_report(
     findings: list[ScanFinding],
     *,
@@ -44,6 +79,7 @@ def format_scan_report(
     invalid_suppressions: list[dict[str, Any]] | None = None,
     diff: dict[str, Any] | None = None,
     root_path: str | None = None,
+    verbose: bool = False,
 ) -> str:
     """Build a readable text report from scanner findings."""
     suppressed_findings = suppressed_findings or []
@@ -72,22 +108,23 @@ def format_scan_report(
     lines.append("")
 
     for index, finding in enumerate(findings, start=1):
-        evidence = _format_evidence(finding["evidence"])
         status = f" ({finding['baseline_status']})" if finding.get("baseline_status") else ""
         lines.extend(
             [
                 f"{index}. [{finding['severity'].upper()}] {finding['rule_id']}{status}",
                 f"   Title: {finding['title']}",
                 f"   File: {_display_file_path(finding['file_path'], root_path)}",
-                f"   Config: {finding['config_type']}",
+                f"   Config type: {_format_config_type(finding['config_type'])}",
                 f"   Line: {finding['line']}",
-                f"   Risk: {finding['description']}",
-                f"   Evidence: {evidence}",
-                f"   Fingerprint: {finding.get('fingerprint', 'not computed')}",
-                f"   Remediation: {finding['remediation']}",
                 "",
             ]
         )
+        lines.extend(_format_text_block("Risk", finding["description"]))
+        lines.extend(_format_evidence_block(finding))
+        lines.extend(_format_text_block("Remediation", finding["remediation"], trailing_blank=not verbose))
+        if verbose:
+            lines.append(f"   Fingerprint: {finding.get('fingerprint', 'not computed')}")
+            lines.append("")
 
     if suppressed_findings:
         lines.extend(["Suppressed findings", "-------------------"])
@@ -97,14 +134,16 @@ def format_scan_report(
                 [
                     f"{index}. [{finding['severity'].upper()}] {finding['rule_id']}",
                     f"   File: {_display_file_path(finding['file_path'], root_path)}",
+                    f"   Config type: {_format_config_type(finding['config_type'])}",
                     f"   Line: {finding['line']}",
                     f"   Reason: {suppression.get('reason', '')}",
                     f"   Owner: {suppression.get('owner', '')}",
                     f"   Expires: {suppression.get('expires', '')}",
-                    f"   Fingerprint: {finding.get('fingerprint', 'not computed')}",
-                    "",
                 ]
             )
+            if verbose:
+                lines.append(f"   Fingerprint: {finding.get('fingerprint', 'not computed')}")
+            lines.append("")
 
     if invalid_suppressions:
         lines.extend(["Suppression review", "------------------"])
@@ -308,6 +347,7 @@ def print_scan_report(
     invalid_suppressions: list[dict[str, Any]] | None = None,
     diff: dict[str, Any] | None = None,
     root_path: str | None = None,
+    verbose: bool = False,
 ) -> None:
     """Print scanner findings to stdout."""
     print(
@@ -317,6 +357,7 @@ def print_scan_report(
             invalid_suppressions=invalid_suppressions,
             diff=diff,
             root_path=root_path,
+            verbose=verbose,
         )
     )
 
@@ -351,7 +392,7 @@ def _sarif_artifact_uri(file_path: str, root: Path | None) -> str:
 def _display_file_path(file_path: str, root_path: str | None) -> str:
     path = Path(file_path)
     if root_path is not None:
-        root = Path(root_path).resolve()
+        root = Path(root_path).expanduser().resolve()
         try:
             return str(path.resolve().relative_to(root))
         except ValueError:
@@ -359,5 +400,41 @@ def _display_file_path(file_path: str, root_path: str | None) -> str:
     return str(path)
 
 
-def _format_evidence(evidence: dict[str, str]) -> str:
-    return "; ".join(f"{key}={value}" for key, value in evidence.items())
+def _format_config_type(config_type: str) -> str:
+    return CONFIG_TYPE_LABELS.get(config_type, config_type.replace("_", " ").title())
+
+
+def _format_text_block(label: str, text: str, *, trailing_blank: bool = True) -> list[str]:
+    lines = [f"   {label}:"]
+    wrapped = textwrap.wrap(
+        text,
+        width=88,
+        initial_indent="   ",
+        subsequent_indent="   ",
+    )
+    lines.extend(wrapped or [""])
+    if trailing_blank:
+        lines.append("")
+    return lines
+
+
+def _format_evidence_block(finding: ScanFinding) -> list[str]:
+    lines = ["   Evidence:"]
+    for key, value in finding["evidence"].items():
+        label = EVIDENCE_LABELS.get(key, key.replace("_", " ").title())
+        lines.append(f"   {label}: {value}")
+    endpoint_scope = _endpoint_scope_label(finding)
+    if endpoint_scope is not None:
+        lines.append(f"   Endpoint scope: {endpoint_scope}")
+    lines.append("")
+    return lines
+
+
+def _endpoint_scope_label(finding: ScanFinding) -> str | None:
+    if finding["rule_id"] != "INSECURE_REMOTE_MCP":
+        return None
+    url = finding["evidence"].get("url", "")
+    localhost_prefixes = ("http://localhost", "http://127.0.0.1", "http://[::1]")
+    if url.startswith(localhost_prefixes):
+        return "Localhost development endpoint"
+    return "Remote network host"

@@ -127,6 +127,7 @@ def run_scan(
     policy_path: str | None = None,
     baseline_path: str | None = None,
     write_baseline_path: str | None = None,
+    verbose: bool = False,
 ) -> int:
     """Scan a folder, print the report, and return a CI-friendly exit code."""
     result = execute_scan(
@@ -159,6 +160,7 @@ def run_scan(
             invalid_suppressions=result["invalid_suppressions"],
             diff=result["diff"],
             root_path=root,
+            verbose=verbose,
         )
 
     return 1 if should_fail_on_findings(findings, fail_on, only_new=baseline_path is not None) else 0
@@ -233,6 +235,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--write-baseline",
         help="Write the active findings from this scan to a versioned baseline JSON file.",
     )
+    scan_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show machine-oriented details such as finding fingerprints in text output.",
+    )
 
     return parser
 
@@ -250,6 +257,7 @@ def main() -> int:
                 policy_path=args.policy,
                 baseline_path=args.baseline,
                 write_baseline_path=args.write_baseline,
+                verbose=args.verbose,
             )
         except (PolicyError, BaselineError, ValueError) as error:
             print(f"lokired: {error}", file=sys.stderr)
