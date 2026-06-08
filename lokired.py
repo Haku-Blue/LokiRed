@@ -10,7 +10,7 @@ from typing import Any, TypedDict
 from baseline import BaselineError, apply_baseline_diff, load_baseline, write_baseline
 from classification import classify_permissions
 from fingerprints import ensure_fingerprints
-from inventory import build_normalized_inventory
+from inventory import build_normalized_inventory, inventory_graph_snapshot
 from policy import PolicyError, apply_policy, load_policy
 from reporter import (
     ScanFinding,
@@ -102,12 +102,22 @@ def execute_scan(
 
     if baseline_path is not None:
         baseline = load_baseline(str(_resolve_scan_artifact_path(root, baseline_path)))
-        active_findings, diff = apply_baseline_diff(active_findings, baseline, root)  # type: ignore[assignment]
+        active_findings, diff = apply_baseline_diff(
+            active_findings,
+            baseline,
+            root,
+            inventory_graph_snapshot(inventory),
+        )  # type: ignore[assignment]
     else:
         active_findings = ensure_fingerprints(active_findings, root)  # type: ignore[assignment]
 
     if write_baseline_path is not None:
-        write_baseline(str(_resolve_scan_artifact_path(root, write_baseline_path)), active_findings, root)
+        write_baseline(
+            str(_resolve_scan_artifact_path(root, write_baseline_path)),
+            active_findings,
+            root,
+            inventory_graph_snapshot(inventory),
+        )
 
     return {
         "targets": targets,
@@ -170,6 +180,14 @@ def should_fail_on_findings(
     only_new: bool = False,
 ) -> bool:
     """Return whether scan findings meet the configured CI severity floor."""
+    enforced_policy_actions = {"block", "require-review"}
+    if any(
+        finding.get("policy_action") in enforced_policy_actions
+        for finding in findings
+        if not only_new or finding.get("baseline_status") == "new"
+    ):
+        return True
+
     if fail_on == "none":
         return False
 
@@ -178,6 +196,7 @@ def should_fail_on_findings(
         SEVERITY_ORDER[finding["severity"]] >= threshold
         for finding in findings
         if not only_new or finding.get("baseline_status") == "new"
+        if finding.get("policy_action") != "warn"
     )
 
 
@@ -217,8 +236,8 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument(
         "--policy",
         help=(
-            "Path to a LokiRed policy file. Defaults to .lokired.yml or "
-            ".lokired.yaml in the scan root when present."
+            "Path to a LokiRed policy file. Defaults to .lokired/policy.yml, "
+            "then legacy .lokired.yml or .lokired.yaml in the scan root when present."
         ),
     )
     scan_parser.add_argument(

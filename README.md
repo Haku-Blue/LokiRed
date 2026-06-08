@@ -50,7 +50,8 @@ LokiRed skips common generated or dependency folders such as `.git`, `node_modul
 ## Requirements
 
 - Python 3.11 or newer.
-- No third-party Python packages are required.
+- No third-party Python packages are required for scanner runtime.
+- SARIF schema-validation tests use the optional `test` extra.
 
 On Windows, make sure `python --version` works before continuing. This workspace includes a local shim so `python` should already resolve correctly.
 
@@ -122,7 +123,7 @@ Arguments:
 - `folder_path`: Folder to scan. Defaults to the current directory.
 - `--format`: Output format. Defaults to `text`.
 - `--fail-on`: Exit with code `1` when findings are at or above the chosen severity. Defaults to `low`.
-- `--policy`: Optional explicit policy file path. Without this flag, LokiRed discovers `.lokired.yml` or `.lokired.yaml` in the scan root when present.
+- `--policy`: Optional explicit policy file path. Without this flag, LokiRed discovers `.lokired/policy.yml`, then legacy `.lokired.yml` or `.lokired.yaml` in the scan root when present.
 - `--baseline`: Optional LokiRed baseline JSON file. Findings are classified as `new`, `unchanged`, or `resolved`.
 - `--write-baseline`: Write active findings from the scan to a versioned baseline JSON file.
 
@@ -187,6 +188,10 @@ Example shape:
     "total_config_files": 8,
     "normalized": {
       "schema_version": "1.0",
+      "clients": [],
+      "servers": [],
+      "capabilities": [],
+      "evidence": [],
       "resources": [],
       "identities": [],
       "permissions": [],
@@ -216,7 +221,7 @@ SARIF includes stable rule ids, rule metadata, relative file locations when a sc
 
 ## Policies And Suppressions
 
-LokiRed policy files are local, versioned, and optional. By default, LokiRed looks for `.lokired.yml` or `.lokired.yaml` in the scan root. Use `--policy` to provide an explicit path.
+LokiRed policy files are local, versioned, and optional. By default, LokiRed looks for `.lokired/policy.yml` in the scan root. Legacy `.lokired.yml` and `.lokired.yaml` remain supported when the canonical path is absent. If more than one implicit policy file exists, LokiRed exits with status `2` and asks you to remove the ambiguity or pass `--policy`. An explicit `--policy` path always wins.
 
 Example:
 
@@ -224,11 +229,17 @@ Example:
 schema_version: 1
 
 access:
-  deny:
+  allow:
+    - resource: workspace
+  warn:
+    - resource: "network:*"
+  block:
     - category: secret
       access: read_secret_literal
       severity: critical
       reason: Literal secrets are not allowed in agent config.
+  require-review:
+    - resource: "filesystem:/"
 
 rules:
   INSECURE_REMOTE_MCP:
@@ -244,7 +255,13 @@ suppressions:
     ticket: SEC-123
 ```
 
-Suppression entries require a rule id, a reason, and at least one narrow selector such as `fingerprint`, `path`, `config_path`, or `resource`. Expired, unused, malformed, or overly broad suppressions are reported instead of silently hiding findings.
+Supported access actions are `allow`, `warn`, `block`, and `require-review`. Legacy `access.deny` is accepted as an alias for `access.block`. If more than one action matches the same classified access, precedence is `block`, then `require-review`, then `warn`, then `allow`.
+
+`block` and `require-review` create policy findings and enforce a non-zero CLI exit even when `--fail-on none` is used. `warn` creates a visible policy finding but does not fail by itself. `allow` permits the matching classified access but does not suppress independent scanner findings.
+
+Unknown access actions, malformed action lists, pattern-level `action` fields, malformed YAML, and unsupported schema versions exit with status `2`.
+
+Suppression entries require `rule_id`, non-empty `path`, non-empty `reason`, non-empty `owner`, and an `expires` date in `YYYY-MM-DD` format. Optional `fingerprint`, `config_path`, and `resource` selectors can narrow a suppression further, but they do not replace file scope. Expired, unused, malformed, resource-only, or overly broad suppressions are reported instead of silently hiding findings.
 
 ## Baseline Diff Scanning
 
@@ -260,7 +277,9 @@ Use a baseline:
 lokired scan . --baseline .lokired-baseline.json --fail-on high
 ```
 
-In baseline mode, active findings are marked as `new` or `unchanged`, and findings that disappeared are listed as `resolved`. CI thresholds apply only to new active findings when `--baseline` is supplied. Without a baseline, threshold behavior is unchanged.
+Baseline files use schema version `2.0`. They store finding fingerprints and an `inventory_graph` snapshot with normalized `clients`, `servers`, `capabilities`, and `evidence`. In baseline mode, active findings are marked as `new` or `unchanged`, findings that disappeared are listed as `resolved`, and graph deltas are reported as `added`, `removed`, `changed`, `expanded`, or `narrowed`. CI thresholds apply only to new active findings when `--baseline` is supplied. Without a baseline, threshold behavior is unchanged.
+
+Legacy schema `1.0` finding-only baselines still load for finding diffing, but graph diff is marked unavailable until the baseline is regenerated.
 
 ## Using LokiRed In CI
 
@@ -448,6 +467,7 @@ This fixture is useful when changing scanner behavior because it checks real-wor
 Run the test suite:
 
 ```powershell
+python -m pip install -e .[test]
 python -m unittest discover -s tests -v
 ```
 
@@ -460,9 +480,12 @@ The tests cover:
 - Supported ecosystem discovery.
 - Normalized inventory serialization.
 - Permission classification.
-- Policy deny rules and severity overrides.
-- Active, expired, invalid, and unused suppressions.
-- Baseline generation and new, unchanged, and resolved diff results.
+- Policy actions, legacy deny handling, severity overrides, and malformed policy rejection.
+- Accountable active, expired, invalid, and unused suppressions.
+- Baseline generation, finding diff results, graph persistence, and graph deltas.
+- Local SARIF 2.1.0 schema validation with the vendored schema in `tests/vendor/sarif`.
+- Direct negative cases for every catalog rule.
+- Static no-execution regression coverage for MCP startup commands.
 - CI threshold behavior.
 - CLI JSON output and exit codes.
 - GitHub Action metadata.

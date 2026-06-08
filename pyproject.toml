@@ -9,6 +9,11 @@ description = "CLI scanner for AI-agent and MCP configuration risk."
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+test = [
+    "jsonschema>=4.0",
+]
+
 [project.scripts]
 lokired = "lokired:main"
 

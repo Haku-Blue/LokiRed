@@ -86,9 +86,12 @@ class InventoryPolicyBaselineTest(unittest.TestCase):
                         "  - rule_id: MCP_AUTO_APPROVAL",
                         "    path: missing.json",
                         "    reason: Stale exception kept for review.",
+                        "    owner: appsec",
+                        "    expires: 2099-01-01",
                         "  - rule_id: INSECURE_REMOTE_MCP",
                         "    path: mcp-config.json",
                         "    reason: Expired exception.",
+                        "    owner: appsec",
                         "    expires: 2000-01-01",
                         "",
                     ]
@@ -129,6 +132,8 @@ class InventoryPolicyBaselineTest(unittest.TestCase):
                         "  - rule_id: HARDCODED_SECRET",
                         "    path: \"*\"",
                         "    reason: Too broad.",
+                        "    owner: appsec",
+                        "    expires: 2099-01-01",
                         "",
                     ]
                 ),
