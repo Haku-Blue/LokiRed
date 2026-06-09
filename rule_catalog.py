@@ -5,6 +5,15 @@ from __future__ import annotations
 from typing import TypedDict
 
 
+SEVERITY_VALUES = frozenset({"low", "medium", "high", "critical"})
+CONFIDENCE_VALUES = frozenset({"high", "medium", "low", "unknown"})
+RECOMMENDED_ACTION_VALUES = frozenset({"warn", "block"})
+
+
+class RuleCatalogError(ValueError):
+    """Raised when bundled rule metadata is internally inconsistent."""
+
+
 class RuleMetadata(TypedDict):
     """Human-readable rule metadata."""
 
@@ -14,6 +23,10 @@ class RuleMetadata(TypedDict):
     purpose: str
     description: str
     severity: str
+    confidence: str
+    recommended_action: str
+    documentation_path: str
+    risk: str
     ecosystems: list[str]
     remediation: str
     suppression_guidance: str
@@ -31,6 +44,13 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
             "the blast radius of agent-executed commands."
         ),
         "severity": "high",
+        "confidence": "high",
+        "recommended_action": "block",
+        "documentation_path": "docs/rules/DANGER_FULL_ACCESS.md",
+        "risk": (
+            "Unrestricted filesystem access can let an agent-operated command read, modify, "
+            "or delete content outside the intended workspace boundary."
+        ),
         "ecosystems": ["codex_config"],
         "remediation": (
             "Use a workspace-scoped permission profile and explicitly allow only the paths "
@@ -52,6 +72,13 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
             "database operation."
         ),
         "severity": "high",
+        "confidence": "medium",
+        "recommended_action": "block",
+        "documentation_path": "docs/rules/DESTRUCTIVE_PERMISSION.md",
+        "risk": (
+            "Durable agent-visible commands can be reused during MCP startup, setup, or agent "
+            "tool use, increasing the chance of data loss or unsafe automation."
+        ),
         "ecosystems": [
             "agent_instructions",
             "claude_mcp",
@@ -85,6 +112,13 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
             "or other credential."
         ),
         "severity": "high",
+        "confidence": "medium",
+        "recommended_action": "block",
+        "documentation_path": "docs/rules/HARDCODED_SECRET.md",
+        "risk": (
+            "Credential-like literals in agent-visible files can leak through source control, "
+            "tool calls, prompts, logs, or generated code."
+        ),
         "ecosystems": [
             "agent_instructions",
             "claude_mcp",
@@ -118,6 +152,13 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
             "credentials to interception."
         ),
         "severity": "medium",
+        "confidence": "high",
+        "recommended_action": "block",
+        "documentation_path": "docs/rules/INSECURE_REMOTE_MCP.md",
+        "risk": (
+            "Plain HTTP remote MCP traffic can be intercepted or modified between the agent "
+            "client and the configured server."
+        ),
         "ecosystems": ["claude_mcp", "codex_config", "cursor_mcp", "generic_mcp", "windsurf_mcp"],
         "remediation": "Use HTTPS for remote MCP servers or keep plain HTTP limited to localhost.",
         "suppression_guidance": (
@@ -132,6 +173,13 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
         "purpose": "Detect supported JSON config files that cannot be parsed structurally.",
         "description": "The configuration is not valid JSON, so agents may ignore it or fail to load controls.",
         "severity": "medium",
+        "confidence": "high",
+        "recommended_action": "block",
+        "documentation_path": "docs/rules/INVALID_CONFIG_JSON.md",
+        "risk": (
+            "Malformed JSON can prevent agent or MCP controls from loading, leaving teams with "
+            "a misleading view of configured access."
+        ),
         "ecosystems": ["claude_mcp", "claude_settings", "cursor_mcp", "generic_mcp", "windsurf_mcp"],
         "remediation": "Fix the JSON syntax and rerun LokiRed so the file can be evaluated structurally.",
         "suppression_guidance": "Do not suppress unless the file is intentionally inert test data.",
@@ -144,6 +192,13 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
         "purpose": "Detect Codex TOML config files that cannot be parsed structurally.",
         "description": "The Codex configuration is not valid TOML, so agent policy may not load as expected.",
         "severity": "medium",
+        "confidence": "high",
+        "recommended_action": "block",
+        "documentation_path": "docs/rules/INVALID_CONFIG_TOML.md",
+        "risk": (
+            "Malformed TOML can prevent Codex settings or approval boundaries from loading "
+            "as reviewers expect."
+        ),
         "ecosystems": ["codex_config"],
         "remediation": "Fix the TOML syntax and rerun LokiRed so Codex settings can be evaluated structurally.",
         "suppression_guidance": "Do not suppress unless the file is intentionally inert test data.",
@@ -159,6 +214,13 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
             "execution without prompting every time."
         ),
         "severity": "medium",
+        "confidence": "high",
+        "recommended_action": "warn",
+        "documentation_path": "docs/rules/MCP_AUTO_APPROVAL.md",
+        "risk": (
+            "Auto-approved MCP tools reduce human review before tool calls and may allow "
+            "writes or external-system actions to proceed too quietly."
+        ),
         "ecosystems": ["claude_mcp", "codex_config", "cursor_mcp", "generic_mcp", "windsurf_mcp"],
         "remediation": "Set MCP approval mode to prompt and scope auto-approved tools to low-risk read-only operations.",
         "suppression_guidance": (
@@ -176,6 +238,13 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
             "tools added through repository configuration."
         ),
         "severity": "medium",
+        "confidence": "high",
+        "recommended_action": "warn",
+        "documentation_path": "docs/rules/MCP_AUTO_ENABLE_PROJECT_SERVERS.md",
+        "risk": (
+            "Automatically enabling all project MCP servers can accept newly committed tools "
+            "without a per-server trust review."
+        ),
         "ecosystems": ["claude_settings"],
         "remediation": "Approve only the MCP servers required for the project and document trusted shared servers.",
         "suppression_guidance": (
@@ -190,6 +259,13 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
         "purpose": "Detect Claude Code allow rules that grant broad tool access.",
         "description": "A Claude Code allow rule grants broad tool access without narrowing the operation scope.",
         "severity": "high",
+        "confidence": "high",
+        "recommended_action": "block",
+        "documentation_path": "docs/rules/OVERBROAD_TOOL_ALLOW.md",
+        "risk": (
+            "Broad tool allow rules weaken approval boundaries by granting categories of "
+            "tool use without narrow operation constraints."
+        ),
         "ecosystems": ["claude_settings"],
         "remediation": "Replace broad allows with the narrowest tool specifier needed.",
         "suppression_guidance": (
@@ -204,6 +280,13 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
         "purpose": "Report normalized inventory access that matches a repository policy deny rule.",
         "description": "A classified permission in the agent inventory matches an explicit policy deny pattern.",
         "severity": "high",
+        "confidence": "high",
+        "recommended_action": "block",
+        "documentation_path": "docs/rules/POLICY_DENIED_ACCESS.md",
+        "risk": (
+            "Repository policy has identified this classified agent access as outside the "
+            "team's accepted boundary."
+        ),
         "ecosystems": ["policy"],
         "remediation": "Remove or narrow the access, or adjust the policy with an explicit accountable exception.",
         "suppression_guidance": (
@@ -218,6 +301,13 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
         "purpose": "Detect configuration or instructions that bypass, disable, or weaken approval prompts.",
         "description": "An agent is configured or instructed to bypass approval prompts or use unrestricted execution.",
         "severity": "critical",
+        "confidence": "high",
+        "recommended_action": "block",
+        "documentation_path": "docs/rules/UNSAFE_APPROVAL_MODE.md",
+        "risk": (
+            "Weakened approval boundaries can let high-impact tool use proceed without the "
+            "human checkpoint teams rely on for semi-autonomous agents."
+        ),
         "ecosystems": [
             "agent_instructions",
             "claude_settings",
@@ -239,3 +329,48 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
 def rule_metadata(rule_id: str) -> RuleMetadata | None:
     """Return metadata for a stable rule identifier."""
     return RULE_CATALOG.get(rule_id)
+
+
+def sorted_rules() -> list[RuleMetadata]:
+    """Return bundled rules in deterministic ID order."""
+    return [RULE_CATALOG[rule_id] for rule_id in sorted(RULE_CATALOG)]
+
+
+def validate_rule_definition(rule_id: str, metadata: RuleMetadata) -> None:
+    """Validate one catalog entry."""
+    if metadata.get("id") != rule_id:
+        raise RuleCatalogError(f"Rule catalog key {rule_id!r} does not match metadata id {metadata.get('id')!r}.")
+    for field in (
+        "title",
+        "severity",
+        "confidence",
+        "recommended_action",
+        "documentation_path",
+        "risk",
+        "remediation",
+    ):
+        if not str(metadata.get(field, "")).strip():
+            raise RuleCatalogError(f"Rule {rule_id} requires non-empty {field}.")
+    if metadata["severity"] not in SEVERITY_VALUES:
+        raise RuleCatalogError(f"Rule {rule_id} has unsupported severity {metadata['severity']!r}.")
+    if metadata["confidence"] not in CONFIDENCE_VALUES:
+        raise RuleCatalogError(f"Rule {rule_id} has unsupported confidence {metadata['confidence']!r}.")
+    if metadata["recommended_action"] not in RECOMMENDED_ACTION_VALUES:
+        raise RuleCatalogError(
+            f"Rule {rule_id} has unsupported recommended action {metadata['recommended_action']!r}."
+        )
+    if metadata["documentation_path"] != metadata.get("help_uri"):
+        raise RuleCatalogError(f"Rule {rule_id} documentation_path and help_uri must match.")
+
+
+def validate_rule_catalog() -> None:
+    """Validate bundled catalog metadata at import and in tests."""
+    seen: set[str] = set()
+    for rule_id, metadata in RULE_CATALOG.items():
+        if rule_id in seen:
+            raise RuleCatalogError(f"Duplicate rule id {rule_id!r}.")
+        seen.add(rule_id)
+        validate_rule_definition(rule_id, metadata)
+
+
+validate_rule_catalog()

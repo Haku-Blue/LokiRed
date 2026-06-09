@@ -1,53 +1,41 @@
-# INVALID_CONFIG_JSON
+# INVALID_CONFIG_JSON: Invalid JSON config
 
-## Title
+## Summary
 
-Invalid JSON config.
+Detects supported JSON configuration files that cannot be parsed structurally.
 
-## Purpose
+## Trigger
 
-Detect supported JSON config files that cannot be parsed structurally.
-
-## What It Detects
-
-Malformed JSON in MCP or agent settings files.
-
-## Why It Matters
-
-Agents may ignore invalid config, fail to load permission controls, or fall back to other configured behavior.
+Triggers when a supported MCP or agent settings JSON file raises a JSON parse error.
 
 ## Severity
 
 Medium.
 
-## Supported Ecosystems
+## Confidence
 
-Generic MCP, Claude MCP, Claude settings, Cursor MCP, and Windsurf MCP.
+High. The parser deterministically reports malformed JSON.
 
-## Triggers
+## Recommended action
 
-```json
-{
-  "mcpServers": {
-}
-```
+Block until the JSON syntax is fixed and the file can be evaluated.
 
-## Does Not Trigger
+## Why it matters
 
-```json
-{
-  "mcpServers": {}
-}
-```
+Agents may ignore invalid config, fail to load permission controls, or fall back to other configured behavior.
+
+## Evidence
+
+Evidence includes the parse error and the parser-provided line where available.
 
 ## Remediation
 
 Fix the JSON syntax and rerun LokiRed so the file can be evaluated structurally.
 
-## Suppression Guidance
+## False-positive considerations
 
-Do not suppress unless the file is intentionally inert test data.
+This is direct parser evidence. Suppression is usually appropriate only for intentionally inert test data.
 
-## Known Limitations
+## Suppression guidance
 
-Line numbers come from the JSON parser and may point at the parse failure location rather than the original mistake.
+Prefer fixing the file. Suppressions require `rule_id`, `path`, `reason`, `owner`, and `expires`.

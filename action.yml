@@ -11,7 +11,7 @@ inputs:
     required: false
     default: "."
   policy-path:
-    description: Optional path to .lokired.yml or .lokired.yaml.
+    description: Optional path to a LokiRed policy file, such as .lokired/policy.yml.
     required: false
     default: ""
   baseline-path:

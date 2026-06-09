@@ -1,63 +1,41 @@
-# HARDCODED_SECRET
+# HARDCODED_SECRET: Hardcoded secret in agent-visible config
 
-## Title
+## Summary
 
-Hardcoded secret in agent-visible config.
+Detects credential-like literals committed into files that AI agents or MCP servers can read.
 
-## Purpose
+## Trigger
 
-Detect credential-like literals committed into files that AI agents or MCP servers can read.
-
-## What It Detects
-
-- Secret-looking keys such as `token`, `password`, `secret`, `api_key`, or `authorization`.
-- Token-looking values such as OpenAI, GitHub, GitLab, Slack, and AWS-style credentials.
-- Agent instruction lines that contain credential assignments.
-
-## Why It Matters
-
-Agent-visible credentials can be copied into prompts, logs, MCP traffic, shell commands, or generated code. They also create ordinary source-control secret exposure.
+Triggers on secret-looking keys or token-looking values in supported structured config and agent instruction files. Environment-variable references such as `${GITHUB_TOKEN}` do not trigger.
 
 ## Severity
 
 High.
 
-## Supported Ecosystems
+## Confidence
 
-MCP JSON configs, Claude settings, Codex config, Cursor/Windsurf configs, GitHub Copilot instructions/prompts/setup files, and general agent instruction files.
+Medium. The rule uses deterministic key and token patterns, but some synthetic or sample values can look credential-like.
 
-## Triggers
+## Recommended action
 
-```json
-{
-  "mcpServers": {
-    "github": {
-      "env": {
-        "GITHUB_TOKEN": "ghp_exampletoken123"
-      }
-    }
-  }
-}
-```
+Block until the literal is removed from agent-visible files.
 
-## Does Not Trigger
+## Why it matters
 
-```json
-{
-  "env": {
-    "GITHUB_TOKEN": "${GITHUB_TOKEN}"
-  }
-}
-```
+Credential-like literals can leak through source control, prompts, logs, MCP traffic, shell commands, or generated code.
+
+## Evidence
+
+Evidence includes the file path, config path, and credential key when available. Raw secret values are redacted.
 
 ## Remediation
 
 Move credentials into a secret manager or environment variable reference and remove literal values from agent-visible files.
 
-## Suppression Guidance
+## False-positive considerations
 
-Suppress only for synthetic fixture credentials or intentionally documented sample values. Scope suppressions to a fingerprint, exact path plus config path, or similarly narrow selector, and include a reason.
+Synthetic fixture credentials and intentionally documented sample values can trigger. Prefer realistic placeholder formats that do not look like real tokens.
 
-## Known Limitations
+## Suppression guidance
 
-LokiRed is not a full secret scanner. It focuses on high-signal credential patterns in supported agent surfaces and avoids broad noisy matching.
+Suppress only for synthetic or intentionally documented examples, scoped to the exact path or fingerprint. Suppressions require `rule_id`, `path`, `reason`, `owner`, and `expires`.

@@ -1,50 +1,41 @@
-# DANGER_FULL_ACCESS
+# DANGER_FULL_ACCESS: Codex sandbox allows full system access
 
-## Title
+## Summary
 
-Codex sandbox allows full system access.
+Detects Codex configuration that gives an agent unrestricted filesystem access.
 
-## Purpose
+## Trigger
 
-Detect Codex configurations that give the agent unrestricted filesystem access.
-
-## What It Detects
-
-- `sandbox_mode = "danger-full-access"`
-- `default_permissions = ":danger-full-access"`
-
-## Why It Matters
-
-Full system access expands the blast radius of agent commands beyond a repository or workspace.
+Triggers on `sandbox_mode = "danger-full-access"` or `default_permissions = ":danger-full-access"` in `.codex/config.toml`.
 
 ## Severity
 
 High.
 
-## Supported Ecosystems
+## Confidence
 
-Codex config.
+High. The finding is based on an exact structured TOML value.
 
-## Triggers
+## Recommended action
 
-```toml
-sandbox_mode = "danger-full-access"
-```
+Block until the sandbox is narrowed or the exception is explicitly reviewed.
 
-## Does Not Trigger
+## Why it matters
 
-```toml
-sandbox_mode = "workspace-write"
-```
+Full system access can let agent-operated commands read, modify, or delete content outside the intended workspace boundary.
+
+## Evidence
+
+Evidence includes the config path and the exact permission value. No command from the config is executed.
 
 ## Remediation
 
 Use a workspace-scoped permission profile and explicitly allow only the paths and network domains the agent needs.
 
-## Suppression Guidance
+## False-positive considerations
 
-Suppress only for isolated non-shared sandboxes where unrestricted access is intentionally accepted.
+This is direct configuration evidence. A false positive is most likely only when the file is inert fixture data.
 
-## Known Limitations
+## Suppression guidance
 
-LokiRed reports the configured sandbox mode. It does not inspect the host filesystem or runtime enforcement.
+Suppress only for isolated, non-shared sandboxes. Suppressions require `rule_id`, `path`, `reason`, `owner`, and `expires`.

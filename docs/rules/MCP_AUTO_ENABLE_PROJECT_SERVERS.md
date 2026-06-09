@@ -1,53 +1,41 @@
-# MCP_AUTO_ENABLE_PROJECT_SERVERS
+# MCP_AUTO_ENABLE_PROJECT_SERVERS: All project MCP servers are enabled
 
-## Title
+## Summary
 
-All project MCP servers are enabled.
+Detects Claude settings that automatically enable every project-scoped MCP server.
 
-## Purpose
+## Trigger
 
-Detect Claude settings that automatically enable every project-scoped MCP server.
-
-## What It Detects
-
-`enableAllProjectMcpServers` set to `true`.
-
-## Why It Matters
-
-Automatically enabling all project MCP servers increases exposure to newly added repo-level tools without a per-server review step.
+Triggers when `enableAllProjectMcpServers` is set to `true`.
 
 ## Severity
 
 Medium.
 
-## Supported Ecosystems
+## Confidence
 
-Claude settings.
+High. The finding is based on an exact structured boolean value.
 
-## Triggers
+## Recommended action
 
-```json
-{
-  "enableAllProjectMcpServers": true
-}
-```
+Warn and require review of the repository's MCP server trust boundary.
 
-## Does Not Trigger
+## Why it matters
 
-```json
-{
-  "enableAllProjectMcpServers": false
-}
-```
+Automatically enabling all project MCP servers increases exposure to newly added repo-level tools without a per-server review step.
+
+## Evidence
+
+Evidence includes the config path and boolean value.
 
 ## Remediation
 
 Approve only the MCP servers required for the project and document why each shared server is trusted.
 
-## Suppression Guidance
+## False-positive considerations
 
-Suppress only when repository-level MCP server changes are reviewed by an accountable owner.
+The value is direct, but the operational risk depends on how project MCP server changes are reviewed.
 
-## Known Limitations
+## Suppression guidance
 
-LokiRed does not know whether every project server is safe; it flags the broad auto-enable behavior.
+Suppress only when repository-level MCP server changes are reviewed by an accountable owner. Suppressions require `rule_id`, `path`, `reason`, `owner`, and `expires`.

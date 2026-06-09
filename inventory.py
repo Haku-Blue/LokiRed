@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import tomllib
 from pathlib import Path
 from typing import Any, TypedDict
@@ -25,6 +26,7 @@ from security_file_scanner import (
 
 
 INVENTORY_SCHEMA_VERSION = "1.0"
+CAPABILITY_PROVENANCE_VALUES = frozenset({"declared", "static_inferred"})
 
 
 class SourceLocation(TypedDict, total=False):
@@ -103,6 +105,9 @@ class InventoryServer(TypedDict, total=False):
     command: str
     arguments: list[str]
     remote_url: str
+    package_source: str
+    version_or_digest: str
+    environment_variable_names: list[str]
     config_scope: str
     evidence_ids: list[str]
 
@@ -116,6 +121,8 @@ class InventoryCapability(TypedDict, total=False):
     operation: str
     access_level: str
     target: str
+    confidence: str
+    provenance: str
     evidence_ids: list[str]
 
 
@@ -126,6 +133,7 @@ class InventoryEvidence(TypedDict, total=False):
     path: str
     line: int
     config_path: str
+    provenance: str
     details: dict[str, Any]
 
 
@@ -460,19 +468,23 @@ class _InventoryBuilder:
         command = server.get("command")
         args = server.get("args")
         url = server.get("url") or server.get("serverUrl")
+        arguments = [str(arg) for arg in args] if isinstance(args, list) else []
         metadata: dict[str, Any] = {
             "config_path": config_path,
             "parent_resource_id": file_resource_id,
         }
         if isinstance(command, str):
-            metadata["command"] = command
-        if isinstance(args, list):
-            metadata["arguments"] = [str(arg) for arg in args]
+            metadata["command"] = _redact_command_part(command)
+        if arguments:
+            metadata["arguments"] = [_redact_command_part(arg) for arg in arguments]
         if isinstance(url, str):
             metadata["remote_url"] = url
             metadata["transport"] = "http" if url.startswith("http://") else "https" if url.startswith("https://") else "remote"
         elif isinstance(command, str) or isinstance(args, list):
             metadata["transport"] = "stdio"
+        metadata["package_source"] = _infer_package_source(command, arguments, url)
+        metadata["version_or_digest"] = _extract_version_or_digest(command, arguments)
+        metadata["environment_variable_names"] = _environment_variable_names(server)
         self._add_resource(
             {
                 "id": server_resource_id,
@@ -607,7 +619,7 @@ class _InventoryBuilder:
             category,
             access,
             "runtime",
-            {"server": server_name, "key": key, "value": "<redacted>" if category == "secret" else value},
+            {"server": server_name, "key": key, "value": "<redacted>"},
         )
 
     def _add_permission(
@@ -642,7 +654,7 @@ class _InventoryBuilder:
             "access": access,
             "scope": scope,
             "source": source,
-            "raw": raw,
+            "raw": _redact_inventory_data(raw),
             "metadata": {},
         }
         if permission_id in self._seen_permissions:
@@ -760,7 +772,7 @@ def _build_explicit_graph(
 ) -> dict[str, list[dict[str, Any]]]:
     evidence_by_key: dict[tuple[str, int, str, str], InventoryEvidence] = {}
 
-    def evidence_for(source: SourceLocation, details: dict[str, Any]) -> str:
+    def evidence_for(source: SourceLocation, details: dict[str, Any], provenance: str = "declared") -> str:
         relative_path = str(source.get("relative_path", source.get("file_path", "")))
         config_path = str(source.get("config_path", ""))
         line = int(source.get("line", 1))
@@ -780,6 +792,7 @@ def _build_explicit_graph(
                 "path": relative_path,
                 "line": line,
                 "config_path": config_path,
+                "provenance": provenance,
                 "details": safe_details,
             },
         )
@@ -842,6 +855,12 @@ def _build_explicit_graph(
                 server[optional_key] = str(metadata[optional_key])  # type: ignore[literal-required]
         if isinstance(metadata.get("arguments"), list):
             server["arguments"] = [str(arg) for arg in metadata["arguments"]]
+        if "package_source" in metadata:
+            server["package_source"] = str(metadata["package_source"])
+        if "version_or_digest" in metadata:
+            server["version_or_digest"] = str(metadata["version_or_digest"])
+        if isinstance(metadata.get("environment_variable_names"), list):
+            server["environment_variable_names"] = [str(name) for name in metadata["environment_variable_names"]]
         servers.append(server)
 
     capabilities: list[InventoryCapability] = []
@@ -849,6 +868,7 @@ def _build_explicit_graph(
         source = permission.get("source", {})
         raw = permission.get("raw", {})
         subject_id = permission.get("resource_id", "")
+        provenance = _capability_provenance(str(permission.get("category", "")))
         evidence_id = evidence_for(
             source,
             {
@@ -858,6 +878,7 @@ def _build_explicit_graph(
                 "target": _capability_target(permission, resource_by_id.get(subject_id, {})),
                 "raw": raw,
             },
+            provenance,
         )
         capabilities.append(
             {
@@ -867,6 +888,12 @@ def _build_explicit_graph(
                 "operation": str(permission.get("access", "")),
                 "access_level": str(permission.get("access", "")),
                 "target": _capability_target(permission, resource_by_id.get(subject_id, {})),
+                "confidence": _capability_confidence(
+                    str(permission.get("category", "")),
+                    str(permission.get("access", "")),
+                    raw,
+                ),
+                "provenance": provenance,
                 "evidence_ids": [evidence_id],
             }
         )
@@ -911,6 +938,82 @@ def _redact_details(value: Any) -> Any:
         return redacted
     if isinstance(value, list):
         return [_redact_details(item) for item in value]
+    if isinstance(value, str) and SECRET_VALUE_PATTERN.search(value):
+        return "<redacted>"
+    return value
+
+
+def _infer_package_source(command: Any, arguments: list[str], url: Any) -> str:
+    if isinstance(url, str) and url:
+        return "remote"
+    if not isinstance(command, str) or not command.strip():
+        return "unknown"
+    executable = Path(command.replace("\\", "/")).name.lower()
+    if executable in {"npx", "npm", "uvx", "pipx", "python", "python3", "node"}:
+        return "python" if executable == "python3" else executable
+    return "binary"
+
+
+def _extract_version_or_digest(command: Any, arguments: list[str]) -> str:
+    parts = []
+    if isinstance(command, str):
+        parts.append(command)
+    parts.extend(arguments)
+    for part in parts:
+        token = str(part).strip().strip("\"'")
+        lowered = token.lower()
+        if "sha256:" in lowered:
+            digest = lowered[lowered.index("sha256:") :]
+            return re.split(r"[\s,;]+", digest)[0]
+        if "@" not in token or token.startswith(("$", "http://", "https://")):
+            continue
+        _, version = token.rsplit("@", 1)
+        version = version.strip()
+        if version and any(char.isdigit() for char in version):
+            return version
+    return ""
+
+
+def _environment_variable_names(server: dict[str, Any]) -> list[str]:
+    env = server.get("env")
+    if not isinstance(env, dict):
+        return []
+    return sorted({str(key) for key in env})
+
+
+def _capability_provenance(category: str) -> str:
+    if category in {"command_execution", "credential_exposure"}:
+        return "static_inferred"
+    return "declared"
+
+
+def _capability_confidence(category: str, access: str, raw: dict[str, Any]) -> str:
+    if category in {"command_execution", "credential_exposure"}:
+        return "medium"
+    if category == "secret" and access == "read_secret_literal":
+        return "medium"
+    return "high"
+
+
+def _redact_command_part(value: Any) -> str:
+    text = str(value)
+    if SECRET_VALUE_PATTERN.search(text) or SECRET_ASSIGNMENT_PATTERN.search(text):
+        return "<redacted>"
+    return text
+
+
+def _redact_inventory_data(value: Any) -> Any:
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, child in value.items():
+            key_text = str(key)
+            if key_text.lower() == "value" or SECRET_KEY_PATTERN.search(key_text):
+                redacted[key_text] = "<redacted>"
+            else:
+                redacted[key_text] = _redact_inventory_data(child)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_inventory_data(item) for item in value]
     if isinstance(value, str) and SECRET_VALUE_PATTERN.search(value):
         return "<redacted>"
     return value

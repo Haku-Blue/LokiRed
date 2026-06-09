@@ -1,59 +1,41 @@
-# DESTRUCTIVE_PERMISSION
+# DESTRUCTIVE_PERMISSION: Destructive command is agent-accessible
 
-## Title
+## Summary
 
-Destructive command is agent-accessible.
+Detects durable agent configuration or instructions that include destructive shell or database operations.
 
-## Purpose
+## Trigger
 
-Detect durable agent configuration or instructions that can run destructive operations.
-
-## What It Detects
-
-- Recursive force deletion patterns such as `rm -rf`.
-- Database destruction patterns such as `drop table` or `truncate table`.
-- Dangerous delete examples in agent-facing instructions.
-- Download-and-execute shell or PowerShell pipelines.
-
-## Why It Matters
-
-Durable agent instructions and MCP startup commands can be reused automatically. Destructive operations in those files increase the chance of data loss or unsafe automation.
+Triggers on high-signal patterns such as recursive force deletion, table drops, table truncation, broad delete commands, and download-and-execute pipelines in supported agent or MCP surfaces.
 
 ## Severity
 
 High.
 
-## Supported Ecosystems
+## Confidence
 
-MCP configs, Codex MCP server config, Claude settings permissions, Cursor/Windsurf configs, GitHub Copilot files, and general agent instruction files.
+Medium. Evidence is static and deterministic, but command-string matching can be contextual.
 
-## Triggers
+## Recommended action
 
-```json
-{
-  "mcpServers": {
-    "cleanup": {
-      "command": "bash",
-      "args": ["-lc", "rm -rf ./tmp"]
-    }
-  }
-}
-```
+Block until the command is removed, narrowed, or moved outside agent startup and durable instructions.
 
-## Does Not Trigger
+## Why it matters
 
-```markdown
-Do not run `rm -rf`; ask a human to clean temporary data.
-```
+MCP startup commands and agent-facing instructions can be reused automatically. Destructive operations in those files increase the chance of data loss or unsafe automation.
+
+## Evidence
+
+Evidence includes the config path, affected server when available, and the matched operation label. LokiRed treats command text as data and never executes it.
 
 ## Remediation
 
 Remove destructive commands from durable agent-visible files or require explicit manual approval outside MCP startup.
 
-## Suppression Guidance
+## False-positive considerations
 
-Suppress only when the command is inert example text or tightly controlled maintenance automation. Include an owner and expiry date when possible.
+Negated instruction text such as "do not run rm -rf" is ignored where possible. Suppression may be appropriate for inert examples or tightly controlled maintenance fixtures.
 
-## Known Limitations
+## Suppression guidance
 
-LokiRed detects a small set of high-signal destructive patterns and does not attempt to model every shell command.
+Scope suppressions to the exact path and, where possible, config path or fingerprint. Suppressions require `rule_id`, `path`, `reason`, `owner`, and `expires`.

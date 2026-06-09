@@ -10,7 +10,7 @@ It helps you answer:
 
 > Which AI coding agents can access which tools, repos, secrets, tokens, and systems, and what risky configuration changes are being introduced?
 
-LokiRed is built for teams using tools such as Codex, Claude Code, Cursor, Windsurf, GitHub Copilot coding agent, and MCP servers. It scans a repository or workspace, finds supported agent configuration files, and reports risky patterns with file paths, line numbers, evidence, severity, and remediation guidance.
+LokiRed is built for teams using tools such as Codex, Claude Code, Cursor, Windsurf, GitHub Copilot coding agent, and MCP servers. It scans a repository or workspace, finds supported agent configuration files, and reports risky patterns with file paths, line numbers, evidence, severity, confidence, recommended action, and remediation guidance.
 
 ## Project Status
 
@@ -35,7 +35,9 @@ LokiRed currently detects:
 - Codex configs with full filesystem access.
 - Invalid JSON or TOML in supported config files.
 
-LokiRed also produces an inventory of discovered agent configuration files when using JSON output. JSON output includes a versioned normalized inventory, permission classifications, stable finding fingerprints, policy and suppression metadata, and optional baseline diff state.
+LokiRed also produces an inventory of discovered agent configuration files when using JSON output. JSON output includes report schema version `1.1`, a versioned normalized inventory, permission classifications, stable finding fingerprints, policy and suppression metadata, and optional baseline diff state.
+
+Rules include first-class confidence and recommended action metadata. Confidence communicates evidence strength (`high`, `medium`, `low`, or `unknown`). Recommended action communicates the rule library's default recommendation (`warn` or `block`) without changing the CLI `--fail-on` severity threshold behavior.
 
 ## Supported Files
 
@@ -111,6 +113,8 @@ Active issues: 9
 
 1. [CRITICAL] UNSAFE_APPROVAL_MODE
    Title: Agent approvals are disabled
+   Confidence: high
+   Recommended action: block
    File: .codex\config.toml
    Config type: Codex configuration
    Line: 1
@@ -128,7 +132,7 @@ Active issues: 9
 
 ## Command Reference
 
-LokiRed has one command:
+Primary scan command:
 
 ```powershell
 lokired scan [folder_path] [--format text|json|sarif] [--fail-on low|medium|high|critical|none] [--policy path] [--baseline path] [--write-baseline path] [--verbose]
@@ -153,6 +157,20 @@ Severity options:
 - `none`
 
 Use `--fail-on none` when you want a report but do not want the command to fail.
+
+Policy validation:
+
+```powershell
+lokired policy validate
+lokired policy validate --policy .lokired/policy.yml
+```
+
+Rule catalog inspection:
+
+```powershell
+lokired rules list
+lokired rules show INSECURE_REMOTE_MCP
+```
 
 ## Output Formats
 
@@ -181,20 +199,23 @@ lokired scan . --format json
 The JSON report includes:
 
 - Tool name and version.
+- Report schema version `1.1`.
 - Summary counts by severity.
 - Summary counts by config type.
 - Full finding details.
 - Inventory of discovered config files.
-- Versioned normalized inventory records.
+- Versioned normalized inventory records, including `clients`, `servers`, `capabilities`, and `evidence`.
 - Permission classifications.
 - Stable finding fingerprints.
+- Finding confidence, recommended action, policy decision when applicable, and baseline state when applicable.
 - Suppressed findings and suppression review metadata when policy suppressions are used.
-- Baseline diff state when `--baseline` is used.
+- Baseline diff state and permission graph-delta summaries when `--baseline` is used.
 
 Example shape:
 
 ```json
 {
+  "report_schema_version": "1.1",
   "tool": {
     "name": "LokiRed",
     "version": "0.1.0"
@@ -240,7 +261,9 @@ To save SARIF to a file:
 lokired scan . --format sarif --fail-on none > lokired.sarif
 ```
 
-SARIF includes stable rule ids, rule metadata, relative file locations when a scan root is known, remediation guidance, evidence, and `lokiredFingerprint/v1` partial fingerprints for GitHub code scanning deduplication.
+SARIF includes stable rule ids, rule metadata, confidence, recommended action, relative file locations when a scan root is known, remediation guidance, redacted evidence, and `lokiredFingerprint/v1` partial fingerprints for GitHub code scanning deduplication.
+
+Default SARIF is optimized for active code-scanning alerts. Suppressed findings, resolved baseline findings, and raw permission graph deltas are not emitted as ordinary SARIF results. JSON is the complete local audit artifact for inventory, suppressions, resolved state, and detailed graph deltas.
 
 ## Policies And Suppressions
 
@@ -431,6 +454,8 @@ Each finding includes:
 - `Severity`: How risky LokiRed considers the issue.
 - `Rule ID`: Stable identifier for the rule that fired.
 - `Title`: Short explanation of the problem.
+- `Confidence`: Evidence strength for the finding.
+- `Recommended action`: Catalog recommendation, separate from CLI threshold behavior.
 - `File`: The file containing the issue.
 - `Config type`: The detected config ecosystem, shown as a readable label in text output.
 - `Line`: Where LokiRed found the evidence.
@@ -563,10 +588,13 @@ Current limitations:
 - It does not yet scan every AI-agent ecosystem.
 - It focuses on high-signal config and instruction risks, not full secret scanning across every file.
 - Its built-in YAML parser supports the policy subset documented in this repository rather than the full YAML specification.
+- Repository scans do not automatically cover local user-profile settings outside the scanned path.
+- Repository scans do not automatically cover SaaS-managed repository settings.
+- The initial CLI does not observe runtime MCP traffic or tool calls.
 
 ## Rule Documentation
 
-Detailed rule documentation lives in [docs/rules](docs/rules), with a broader workflow guide in [docs/guide.md](docs/guide.md). Each rule page documents the rule id, title, purpose, detection behavior, severity, supported ecosystems, trigger and non-trigger examples, remediation, suppression guidance, and known limitations.
+Detailed rule documentation lives in [docs/rules](docs/rules), with a broader workflow guide in [docs/guide.md](docs/guide.md). See also the [threat model](docs/threat-model.md) and [privacy model](docs/privacy-model.md). Each rule page documents the rule id, title, trigger, severity, confidence, recommended action, evidence, remediation, false-positive considerations, and suppression guidance.
 
 ## Development Notes
 

@@ -1,62 +1,41 @@
-# POLICY_DENIED_ACCESS
+# POLICY_DENIED_ACCESS: Policy denies classified agent access
 
-## Title
+## Summary
 
-Policy denies classified agent access.
+Reports normalized inventory access that matches a repository policy `block`, `warn`, or `require-review` rule.
 
-## Purpose
+## Trigger
 
-Report normalized inventory access that matches an explicit repository policy deny rule.
-
-## What It Detects
-
-Any permission classification matching an `access.deny` pattern in `.lokired.yml` or an explicitly supplied policy file.
-
-## Why It Matters
-
-Policy findings let teams enforce local acceptable-access rules without changing built-in deterministic scanner rules.
+Triggers when a permission classification matches an access policy action and is not exempted by a narrower `allow` entry. Legacy `deny` entries are mapped to `block`.
 
 ## Severity
 
-The deny rule can set `severity`. If omitted, LokiRed uses the matched classification's conservative `severity_hint`.
+High by catalog default. A policy pattern can set an explicit severity; otherwise LokiRed uses the matched classification's conservative severity hint.
 
-## Supported Ecosystems
+## Confidence
 
-All ecosystems that produce normalized inventory and classifications.
+High. Policy findings are deterministic matches between normalized static inventory and explicit policy selectors.
 
-## Triggers
+## Recommended action
 
-```yaml
-schema_version: 1
-access:
-  deny:
-    - category: secret
-      access: read_secret_literal
-      severity: critical
-      reason: Literal secrets are not allowed.
-```
+Block for `block` and legacy `deny` policy decisions. `warn` and `require-review` findings carry their explicit policy decision in reports.
 
-## Does Not Trigger
+## Why it matters
 
-```yaml
-schema_version: 1
-access:
-  allow:
-    - category: secret
-      resource: local-fixture
-  deny:
-    - category: secret
-      access: read_secret_literal
-```
+Policy findings let teams enforce local acceptable-access rules without changing built-in scanner rules.
+
+## Evidence
+
+Evidence includes the matched classification, category, access, scope, resource, policy decision, and policy reason. SARIF includes the policy file as a related location when available.
 
 ## Remediation
 
-Remove or narrow the denied access, or add a more specific accountable allow entry when the access is expected.
+Remove or narrow the denied access, or add a more specific accountable `allow` entry when the access is expected.
 
-## Suppression Guidance
+## False-positive considerations
 
-Prefer a narrow policy allow entry for expected access. Suppress only with a fingerprint or exact path and a reason.
+Policy evaluation depends on normalized inventory precision. If a parser cannot infer exact scope, the classification remains conservative.
 
-## Known Limitations
+## Suppression guidance
 
-Policy evaluation depends on classification precision. If a parser cannot infer exact scope, the classification remains conservative.
+Prefer a narrow policy `allow` entry for expected access. Suppressions require `rule_id`, `path`, `reason`, `owner`, and `expires`.

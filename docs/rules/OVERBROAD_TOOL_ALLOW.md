@@ -1,57 +1,41 @@
-# OVERBROAD_TOOL_ALLOW
+# OVERBROAD_TOOL_ALLOW: Overbroad tool allow rule
 
-## Title
+## Summary
 
-Overbroad tool allow rule.
+Detects Claude Code allow rules that grant broad tool access without narrowing command or operation scope.
 
-## Purpose
+## Trigger
 
-Detect Claude Code allow rules that grant broad tool access without narrowing command or operation scope.
-
-## What It Detects
-
-Broad allow rules such as `Bash`, `Edit`, `Write`, `Bash(*)`, `Edit(*)`, or `mcp__*`.
-
-## Why It Matters
-
-Broad tool allows reduce review boundaries and can let agents run commands or edit files outside the intended operation.
+Triggers on broad allow rules such as `Bash`, `Edit`, `Write`, `Bash(*)`, `Edit(*)`, or `mcp__*`.
 
 ## Severity
 
 High.
 
-## Supported Ecosystems
+## Confidence
 
-Claude settings.
+High. The finding is based on exact allow-rule values known to be broad.
 
-## Triggers
+## Recommended action
 
-```json
-{
-  "permissions": {
-    "allow": ["Bash(*)"]
-  }
-}
-```
+Block until the allow rule is narrowed.
 
-## Does Not Trigger
+## Why it matters
 
-```json
-{
-  "permissions": {
-    "allow": ["Bash(git status)"]
-  }
-}
-```
+Broad tool allows reduce review boundaries and can let agents run commands or edit files outside the intended operation.
+
+## Evidence
+
+Evidence includes the config path and allow-rule value.
 
 ## Remediation
 
 Replace broad allows with the narrowest tool specifier needed, such as a read-only command pattern.
 
-## Suppression Guidance
+## False-positive considerations
 
-Suppress only for isolated developer workspaces where the broad rule is intentionally accepted.
+Suppressions may be appropriate for isolated developer workspaces where broad access is intentionally accepted and reviewed.
 
-## Known Limitations
+## Suppression guidance
 
-LokiRed does not parse every possible tool expression. It focuses on known broad allow forms.
+Prefer narrowing the rule. Suppressions require `rule_id`, `path`, `reason`, `owner`, and `expires`.

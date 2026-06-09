@@ -29,6 +29,20 @@ class InventoryPolicyBaselineTest(unittest.TestCase):
         self.assertEqual(first_inventory["schema_version"], "1.0")
         self.assertEqual(inventory_to_json(first_inventory), inventory_to_json(second_inventory))
         self.assertIn("mcp_server", {resource["kind"] for resource in first_inventory["resources"]})
+        self.assertTrue(first_inventory["clients"])
+        self.assertTrue(first_inventory["servers"])
+        self.assertTrue(first_inventory["capabilities"])
+        self.assertTrue(first_inventory["evidence"])
+        self.assertTrue(
+            all(
+                capability["confidence"] in {"high", "medium", "low", "unknown"}
+                and capability["provenance"] in {"declared", "static_inferred"}
+                for capability in first_inventory["capabilities"]
+            )
+        )
+        self.assertTrue(
+            all(evidence["provenance"] in {"declared", "static_inferred"} for evidence in first_inventory["evidence"])
+        )
         self.assertTrue(
             {
                 "approval_boundary",
@@ -106,6 +120,10 @@ class InventoryPolicyBaselineTest(unittest.TestCase):
 
             self.assertEqual([finding["rule_id"] for finding in suppressed], ["HARDCODED_SECRET"])
             self.assertIn("POLICY_DENIED_ACCESS", {finding["rule_id"] for finding in active})
+            policy_finding = next(finding for finding in active if finding["rule_id"] == "POLICY_DENIED_ACCESS")
+            self.assertEqual(policy_finding["confidence"], "high")
+            self.assertEqual(policy_finding["recommended_action"], "block")
+            self.assertEqual(policy_finding["policy_decision"], "block")
             self.assertEqual(
                 next(finding for finding in active if finding["rule_id"] == "INSECURE_REMOTE_MCP")["severity"],
                 "high",

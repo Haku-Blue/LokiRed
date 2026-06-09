@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from fingerprints import ensure_fingerprints, relative_finding_path
-from inventory import INVENTORY_SCHEMA_VERSION
+from inventory import INVENTORY_SCHEMA_VERSION, inventory_graph_snapshot
 
 
 BASELINE_SCHEMA_VERSION = "2.0"
@@ -47,6 +47,8 @@ class DiffResult(TypedDict):
     summary: dict[str, int]
     resolved_findings: list[BaselineFinding]
     inventory_graph: dict[str, Any]
+    graph_summary: dict[str, int]
+    graph_deltas: dict[str, list[dict[str, Any]]]
 
 
 def build_baseline(
@@ -76,6 +78,7 @@ def build_baseline(
         "inventory_graph": _baseline_inventory_graph(inventory_graph),
         "metadata": {
             "finding_count": len(baseline_findings),
+            "graph_record_count": _inventory_graph_record_count(inventory_graph),
         },
     }
 
@@ -127,10 +130,11 @@ def apply_baseline_diff(
     for finding in enriched:
         copied = dict(finding)
         copied["baseline_status"] = "unchanged" if finding["fingerprint"] in baseline_by_fingerprint else "new"
+        copied["baseline_state"] = copied["baseline_status"]
         updated.append(copied)
 
     resolved = [
-        dict(record, baseline_status="resolved")
+        dict(record, baseline_status="resolved", baseline_state="resolved")
         for record in baseline["findings"]
         if record["fingerprint"] not in active_fingerprints
     ]
@@ -152,11 +156,19 @@ def apply_baseline_diff(
         baseline.get("inventory_graph"),
         inventory_graph,
     )
+    graph_summary = dict(graph_diff.get("summary", {delta_type: 0 for delta_type in GRAPH_DELTA_TYPES}))
     return updated, {
         "summary": summary,
         "resolved_findings": resolved,
         "inventory_graph": graph_diff,
+        "graph_summary": graph_summary,
+        "graph_deltas": _graph_deltas_by_type(graph_diff.get("deltas", [])),
     }
+
+
+def build_graph_snapshot(inventory: dict[str, Any]) -> dict[str, Any]:
+    """Compatibility wrapper for callers that want the baseline graph subset."""
+    return inventory_graph_snapshot(inventory)
 
 
 def _baseline_record(finding: dict[str, Any], root_path: str | None) -> BaselineFinding:
@@ -240,6 +252,12 @@ def _baseline_inventory_graph(inventory_graph: dict[str, Any] | None) -> dict[st
     return _validate_inventory_graph(inventory_graph)
 
 
+def _inventory_graph_record_count(inventory_graph: dict[str, Any] | None) -> int:
+    if inventory_graph is None:
+        return 0
+    return sum(len(inventory_graph.get(collection, [])) for collection in ("clients", "servers", "capabilities", "evidence"))
+
+
 def _validate_inventory_graph(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise BaselineError("Baseline field 'inventory_graph' must be an object.")
@@ -313,6 +331,19 @@ def diff_inventory_graph(
         "summary": summary,
         "deltas": deltas,
     }
+
+
+def _graph_deltas_by_type(deltas: Any) -> dict[str, list[dict[str, Any]]]:
+    grouped = {delta_type: [] for delta_type in GRAPH_DELTA_TYPES}
+    if not isinstance(deltas, list):
+        return grouped
+    for delta in deltas:
+        if not isinstance(delta, dict):
+            continue
+        change_type = str(delta.get("change_type", ""))
+        if change_type in grouped:
+            grouped[change_type].append(delta)
+    return grouped
 
 
 def _diff_graph_collection(

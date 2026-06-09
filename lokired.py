@@ -17,8 +17,10 @@ from reporter import (
     ScanTarget,
     format_json_report,
     format_sarif_report,
+    format_sarif_report_with_context,
     print_scan_report,
 )
+from rule_catalog import rule_metadata, sorted_rules
 from security_file_scanner import detect_config_issues, find_security_config_targets
 
 
@@ -57,7 +59,7 @@ def scan_targets(targets: list[ScanTarget]) -> list[ScanFinding]:
 
         for issue in detect_config_issues(config_text, target["config_type"]):
             findings.append(
-                {
+                _hydrate_finding_metadata({
                     "file_path": file_path,
                     "config_type": issue["config_type"],
                     "severity": issue["severity"],
@@ -67,7 +69,7 @@ def scan_targets(targets: list[ScanTarget]) -> list[ScanFinding]:
                     "rule_id": issue["rule_id"],
                     "evidence": issue["evidence"],
                     "remediation": issue["remediation"],
-                }
+                })
             )
 
     return sorted(
@@ -162,7 +164,14 @@ def run_scan(
             )
         )
     elif output_format == "sarif":
-        print(format_sarif_report(findings, root))
+        print(
+            format_sarif_report_with_context(
+                findings,
+                root,
+                suppressed_findings=result["suppressed_findings"],
+                diff=result["diff"],
+            )
+        )
     else:
         print_scan_report(
             findings,
@@ -201,6 +210,58 @@ def should_fail_on_findings(
         if not only_new or finding.get("baseline_status") == "new"
         if finding.get("policy_action") != "warn"
     )
+
+
+def validate_policy_command(root_path: str, explicit_policy_path: str | None = None) -> int:
+    """Validate policy discovery and parsing without scanning repository files."""
+    root = str(Path(root_path).expanduser().resolve())
+    try:
+        policy = load_policy(root, explicit_policy_path)
+    except PolicyError as error:
+        print(f"lokired policy: {error}", file=sys.stderr)
+        return 2
+    source_path = policy.get("source_path")
+    if not source_path:
+        print("lokired policy: no policy file found", file=sys.stderr)
+        return 2
+    invalid = policy.get("invalid_suppressions", [])
+    if invalid:
+        print(f"Policy path: {source_path}")
+        for suppression in invalid:
+            print(f"Invalid suppression {suppression.get('index', '')}: {suppression.get('message', '')}")
+        return 2
+    print(f"Policy path: {source_path}")
+    print("Policy is valid.")
+    return 0
+
+
+def rules_list_command() -> int:
+    """Print the local rule catalog in deterministic order."""
+    print("Rule ID | Severity | Confidence | Recommended action | Title")
+    print("------- | -------- | ---------- | ------------------ | -----")
+    for rule in sorted_rules():
+        print(
+            f"{rule['id']} | {rule['severity']} | {rule['confidence']} | "
+            f"{rule['recommended_action']} | {rule['title']}"
+        )
+    return 0
+
+
+def rules_show_command(rule_id: str) -> int:
+    """Print local rule metadata for one rule."""
+    metadata = rule_metadata(rule_id)
+    if metadata is None:
+        print(f"lokired rules: unknown rule id {rule_id}", file=sys.stderr)
+        return 2
+    print(f"Rule ID: {metadata['id']}")
+    print(f"Title: {metadata['title']}")
+    print(f"Severity: {metadata['severity']}")
+    print(f"Confidence: {metadata['confidence']}")
+    print(f"Recommended action: {metadata['recommended_action']}")
+    print(f"Risk: {metadata['risk']}")
+    print(f"Remediation: {metadata['remediation']}")
+    print(f"Documentation path: {metadata['documentation_path']}")
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -260,6 +321,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show machine-oriented details such as finding fingerprints in text output.",
     )
 
+    policy_parser = subparsers.add_parser(
+        "policy",
+        help="Validate local LokiRed policy files.",
+    )
+    policy_subparsers = policy_parser.add_subparsers(dest="policy_command", required=True)
+    policy_validate = policy_subparsers.add_parser(
+        "validate",
+        help="Validate policy discovery, parsing, actions, and suppressions.",
+    )
+    policy_validate.add_argument(
+        "root_path",
+        nargs="?",
+        default=".",
+        help="Scan root used for canonical policy discovery. Defaults to the current directory.",
+    )
+    policy_validate.add_argument(
+        "--policy",
+        help="Explicit policy path to validate.",
+    )
+
+    rules_parser = subparsers.add_parser(
+        "rules",
+        help="Inspect the local LokiRed rule catalog.",
+    )
+    rules_subparsers = rules_parser.add_subparsers(dest="rules_command", required=True)
+    rules_subparsers.add_parser("list", help="List bundled rules.")
+    rules_show = rules_subparsers.add_parser("show", help="Show one bundled rule.")
+    rules_show.add_argument("rule_id", help="Rule ID to inspect.")
+
     return parser
 
 
@@ -281,6 +371,12 @@ def main() -> int:
         except (PolicyError, BaselineError, ValueError) as error:
             print(f"lokired: {error}", file=sys.stderr)
             return 2
+    if args.command == "policy" and args.policy_command == "validate":
+        return validate_policy_command(args.root_path, args.policy)
+    if args.command == "rules" and args.rules_command == "list":
+        return rules_list_command()
+    if args.command == "rules" and args.rules_command == "show":
+        return rules_show_command(args.rule_id)
 
     raise ValueError(f"Unsupported command: {args.command}")
 
@@ -290,6 +386,25 @@ def _resolve_scan_artifact_path(root_path: str, artifact_path: str) -> Path:
     if path.is_absolute():
         return path
     return Path(root_path) / path
+
+
+def _hydrate_finding_metadata(finding: dict[str, Any]) -> ScanFinding:
+    metadata = rule_metadata(str(finding.get("rule_id", "")))
+    copied = dict(finding)
+    if metadata is not None:
+        copied.setdefault("confidence", metadata["confidence"])
+        copied.setdefault("recommended_action", metadata["recommended_action"])
+        copied.setdefault("risk", metadata["risk"])
+    evidence = dict(copied.get("evidence", {}))
+    evidence.setdefault("provenance", _finding_evidence_provenance(copied))
+    copied["evidence"] = evidence
+    return copied  # type: ignore[return-value]
+
+
+def _finding_evidence_provenance(finding: dict[str, Any]) -> str:
+    if str(finding.get("rule_id", "")) in {"DESTRUCTIVE_PERMISSION", "HARDCODED_SECRET"}:
+        return "static_inferred"
+    return "declared"
 
 
 if __name__ == "__main__":

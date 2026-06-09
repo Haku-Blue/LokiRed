@@ -13,11 +13,11 @@ from typing import Any, TypedDict
 
 from classification import PermissionClassification
 from fingerprints import ensure_fingerprints, finding_fingerprint, relative_finding_path
-from rule_catalog import RULE_CATALOG
+from rule_catalog import RULE_CATALOG, rule_metadata
 
 
 POLICY_SCHEMA_VERSION = "1.0"
-DEFAULT_POLICY_FILENAMES = (".lokired/policy.yml", ".lokired.yml", ".lokired.yaml")
+DEFAULT_POLICY_FILENAMES = (".lokired/policy.yml", ".lokired/policy.yaml", ".lokired.yml", ".lokired.yaml")
 SEVERITIES = {"low", "medium", "high", "critical"}
 SUPPRESSION_SELECTOR_KEYS = ("fingerprint", "path", "config_path", "resource")
 POLICY_ACCESS_ACTIONS = ("allow", "warn", "block", "require-review")
@@ -109,10 +109,10 @@ def apply_policy(
         _build_policy_findings(classifications, policy, root_path),
         root_path,
     )
-    all_findings = _apply_severity_overrides(
+    all_findings = _ensure_finding_metadata(_apply_severity_overrides(
         [*with_fingerprints, *policy_findings],
         policy,
-    )
+    ))
 
     active: list[dict[str, Any]] = []
     suppressed: list[dict[str, Any]] = []
@@ -421,6 +421,16 @@ def _build_policy_findings(
             PolicyAction.WARN.value: "Access is warned by repository policy.",
         }[action]
         reason = str(pattern.get("reason", default_reason))
+        policy_path = str(policy.get("source_path") or "")
+        related_locations = []
+        if policy_path:
+            related_locations.append(
+                {
+                    "file_path": policy_path,
+                    "line": 1,
+                    "message": f"Policy {action} rule matched this classified access.",
+                }
+            )
         findings.append(
             {
                 "file_path": source.get("file_path", ""),
@@ -433,6 +443,8 @@ def _build_policy_findings(
                 "line": int(source.get("line", 1)),
                 "rule_id": "POLICY_DENIED_ACCESS",
                 "policy_action": action,
+                "policy_decision": action,
+                "related_locations": related_locations,
                 "evidence": {
                     "config_path": str(source.get("config_path", "")),
                     "classification": classification["id"],
@@ -441,7 +453,9 @@ def _build_policy_findings(
                     "scope": classification["scope"],
                     "resource": classification.get("resource_name", ""),
                     "policy_action": action,
+                    "policy_decision": action,
                     "policy_reason": reason,
+                    "provenance": "static_inferred",
                 },
                 "remediation": str(
                     pattern.get(
@@ -492,6 +506,29 @@ def _apply_severity_overrides(
             copied["severity"] = override
         updated.append(copied)
     return updated
+
+
+def _ensure_finding_metadata(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    updated: list[dict[str, Any]] = []
+    for finding in findings:
+        copied = dict(finding)
+        metadata = rule_metadata(str(copied.get("rule_id", "")))
+        if metadata is not None:
+            copied.setdefault("confidence", metadata["confidence"])
+            copied.setdefault("recommended_action", metadata["recommended_action"])
+            copied.setdefault("risk", metadata["risk"])
+        evidence = dict(copied.get("evidence", {}))
+        evidence.setdefault("provenance", _finding_evidence_provenance(copied))
+        copied["evidence"] = evidence
+        updated.append(copied)
+    return updated
+
+
+def _finding_evidence_provenance(finding: dict[str, Any]) -> str:
+    rule_id = str(finding.get("rule_id", ""))
+    if rule_id in {"DESTRUCTIVE_PERMISSION", "HARDCODED_SECRET", "POLICY_DENIED_ACCESS"}:
+        return "static_inferred"
+    return "declared"
 
 
 def _evaluate_suppression(suppression: dict[str, Any]) -> _SuppressionState:

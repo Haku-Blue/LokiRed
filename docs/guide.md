@@ -2,6 +2,8 @@
 
 LokiRed is local-first. A scan reads files from the repository or workspace you point it at, applies deterministic rules, evaluates optional local policy and baseline files, and renders text, JSON, or SARIF. It does not require a remote service or telemetry.
 
+See the [threat model](threat-model.md) and [privacy model](privacy-model.md) for explicit security and data-handling boundaries.
+
 ## Scan Flow
 
 1. Discover supported AI-agent, MCP, and instruction files.
@@ -32,6 +34,10 @@ The schema contains:
 
 Records are sorted deterministically. Identifiers are stable hashes of repo-relative path, ecosystem, source path, and record-specific fields. Future schema additions should be optional so existing consumers keep working.
 
+Server records are enriched only from statically available configuration. They include transport, command, arguments, remote URL, package source, explicitly pinned version or digest when present, environment-variable names, config scope, and evidence ids. Environment-variable names may be recorded, but values are not emitted.
+
+Capability provenance is `declared` when configuration directly states access, and `static_inferred` when LokiRed derives the capability from paths, commands, allow rules, environment-variable references, or other static evidence. Capability confidence uses the same evidence-strength vocabulary as findings.
+
 Example JSON shape:
 
 ```json
@@ -58,6 +64,19 @@ Example JSON shape:
 }
 ```
 
+## Rule Metadata
+
+The rule catalog is the single source of truth for rule id, title, severity, confidence, recommended action, documentation path, risk, and remediation.
+
+Confidence values are `high`, `medium`, `low`, and `unknown`. Recommended actions are `warn` and `block`. Recommended action is report metadata for transparency and future policy integration; it does not replace the existing `--fail-on` severity threshold.
+
+Use local catalog inspection without scanning files:
+
+```powershell
+lokired rules list
+lokired rules show INSECURE_REMOTE_MCP
+```
+
 ## Permission Classification
 
 Classifications are derived from normalized inventory, not raw parser internals. They use a small model:
@@ -80,6 +99,13 @@ lokired scan . --policy path/to/policy.yml
 ```
 
 Explicit `--policy` wins over default discovery. If more than one implicit policy file exists, LokiRed exits with status `2` instead of merging files. If no policy file is present, LokiRed uses built-in defaults with no access decisions, no severity overrides, and no suppressions.
+
+Validate a policy without scanning repository files:
+
+```powershell
+lokired policy validate
+lokired policy validate --policy .lokired/policy.yml
+```
 
 Policy files use schema version `1`:
 
@@ -180,7 +206,9 @@ SARIF output is intended for GitHub code scanning:
 lokired scan . --format sarif --fail-on none > lokired.sarif
 ```
 
-SARIF includes stable rule identifiers, rule metadata, relative artifact URIs when a scan root is known, start lines, remediation text, evidence, severity mappings, and `lokiredFingerprint/v1` partial fingerprints for deduplication.
+SARIF includes stable rule identifiers, rule metadata, confidence, recommended action, relative artifact URIs when a scan root is known, start lines, remediation text, evidence, severity mappings, policy decision when applicable, baseline state when applicable, related locations where useful, run-level LokiRed summary properties, and `lokiredFingerprint/v1` partial fingerprints for deduplication.
+
+Default SARIF is intended for active code-scanning findings. Suppressed findings, resolved baseline findings, and raw permission graph deltas remain available through local text and JSON reports rather than default SARIF results. JSON is the full-fidelity local audit output.
 
 The test suite validates generated SARIF locally against the vendored SARIF 2.1.0 schema at `tests/vendor/sarif/sarif-schema-2.1.0.json`. Tests do not fetch the schema at runtime.
 

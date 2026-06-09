@@ -1,61 +1,41 @@
-# INSECURE_REMOTE_MCP
+# INSECURE_REMOTE_MCP: Remote MCP server uses insecure HTTP
 
-## Title
+## Summary
 
-Remote MCP server uses insecure HTTP.
+Detects remote MCP servers configured over unencrypted HTTP.
 
-## Purpose
+## Trigger
 
-Detect remote MCP servers configured over unencrypted HTTP.
-
-## What It Detects
-
-MCP server URLs that start with `http://` and are not localhost, `127.0.0.1`, or `[::1]`.
-
-## Why It Matters
-
-Plain HTTP can expose MCP traffic, tool inputs, and credentials to interception or modification.
+Triggers on MCP server URLs that start with `http://` and are not localhost, `127.0.0.1`, or `[::1]`.
 
 ## Severity
 
 Medium.
 
-## Supported Ecosystems
+## Confidence
 
-Generic MCP, Claude MCP, Cursor MCP, Windsurf MCP, and Codex MCP server config.
+High. The finding is based on an exact URL value in structured configuration.
 
-## Triggers
+## Recommended action
 
-```json
-{
-  "mcpServers": {
-    "tickets": {
-      "url": "http://tickets.example.com/mcp"
-    }
-  }
-}
-```
+Block for shared repositories and CI until HTTPS or a localhost-only endpoint is used.
 
-## Does Not Trigger
+## Why it matters
 
-```json
-{
-  "mcpServers": {
-    "local-dev": {
-      "url": "http://localhost:3333/mcp"
-    }
-  }
-}
-```
+Plain HTTP can expose MCP traffic, tool inputs, and credentials to interception or modification.
+
+## Evidence
+
+Evidence includes the config path, server name, and remote URL.
 
 ## Remediation
 
 Use HTTPS for remote MCP servers or keep plain HTTP limited to localhost-only development endpoints.
 
-## Suppression Guidance
+## False-positive considerations
 
-Suppress only for temporary internal endpoints with compensating network controls, and include a ticket or expiry.
+Internal endpoints can still be risky. A temporary suppression may be reasonable when compensating network controls are documented.
 
-## Known Limitations
+## Suppression guidance
 
-LokiRed does not verify TLS configuration quality; it only distinguishes plain HTTP from HTTPS/local development endpoints.
+Use narrow, temporary suppressions with an accountable owner. Suppressions require `rule_id`, `path`, `reason`, `owner`, and `expires`.

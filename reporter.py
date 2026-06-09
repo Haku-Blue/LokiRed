@@ -18,18 +18,24 @@ class ScanFinding(TypedDict):
     file_path: str
     config_type: str
     severity: str
+    confidence: str
+    recommended_action: str
     title: str
     description: str
     line: int
     rule_id: str
     evidence: dict[str, str]
     remediation: str
+    risk: NotRequired[str]
     fingerprint: NotRequired[str]
     baseline_status: NotRequired[str]
+    baseline_state: NotRequired[str]
     suppressed: NotRequired[bool]
     suppression: NotRequired[dict[str, Any]]
     policy_original_severity: NotRequired[str]
     policy_action: NotRequired[str]
+    policy_decision: NotRequired[str]
+    related_locations: NotRequired[list[dict[str, Any]]]
 
 
 class ScanTarget(TypedDict):
@@ -93,11 +99,12 @@ def format_scan_report(
         "=====================",
         f"Total issues: {len(findings)}",
         f"Active issues: {len(findings)}",
+        f"Suppressed findings: {len(suppressed_findings)}",
+        f"Expired suppressions: {sum(1 for item in invalid_suppressions if item.get('status') == 'expired')}",
+        f"Invalid suppressions: {sum(1 for item in invalid_suppressions if item.get('status') != 'expired')}",
     ]
     if suppressed_findings:
         lines.append(f"Suppressed issues: {len(suppressed_findings)}")
-    if invalid_suppressions:
-        lines.append(f"Invalid or expired suppressions: {len(invalid_suppressions)}")
     if diff:
         summary = diff.get("summary", {})
         lines.append(
@@ -122,19 +129,22 @@ def format_scan_report(
     lines.append("")
 
     for index, finding in enumerate(findings, start=1):
-        status = f" ({finding['baseline_status']})" if finding.get("baseline_status") else ""
+        baseline_state = finding.get("baseline_state") or finding.get("baseline_status")
+        status = f" ({baseline_state})" if baseline_state else ""
         policy_action = f" Policy: {finding['policy_action']}" if finding.get("policy_action") else ""
         lines.extend(
             [
                 f"{index}. [{finding['severity'].upper()}] {finding['rule_id']}{status}",
                 f"   Title: {finding['title']}",
+                f"   Confidence: {finding.get('confidence', 'unknown')}",
+                f"   Recommended action: {finding.get('recommended_action', 'warn')}",
                 f"   File: {_display_file_path(finding['file_path'], root_path)}",
                 f"   Config type: {_format_config_type(finding['config_type'])}",
                 f"   Line: {finding['line']}",
                 *([f"   {policy_action.strip()}"] if policy_action else []),
             ]
         )
-        lines.extend(_format_text_block("Risk", finding["description"]))
+        lines.extend(_format_text_block("Risk", finding.get("risk", finding["description"])))
         lines.extend(_format_evidence_block(finding))
         lines.extend(_format_text_block("Remediation", finding["remediation"], trailing_blank=not verbose))
         if verbose:
@@ -209,9 +219,12 @@ def build_scan_payload(
     severity_counts = Counter(finding["severity"] for finding in findings)
     config_counts = Counter(finding["config_type"] for finding in findings)
     inventory_counts = Counter(target["config_type"] for target in targets or [])
-    baseline_counts = Counter(finding.get("baseline_status", "active") for finding in findings)
+    baseline_counts = Counter(finding.get("baseline_state", finding.get("baseline_status", "active")) for finding in findings)
+    suppression_summary = _suppression_summary(suppressed_findings, invalid_suppressions)
+    graph_summary = _graph_summary(diff)
 
     payload: dict[str, Any] = {
+        "report_schema_version": "1.1",
         "tool": {
             "name": "LokiRed",
             "version": "0.1.0",
@@ -223,6 +236,8 @@ def build_scan_payload(
             "by_severity": dict(sorted(severity_counts.items())),
             "by_config_type": dict(sorted(config_counts.items())),
             "by_baseline_status": dict(sorted(baseline_counts.items())),
+            "suppression_summary": suppression_summary,
+            "baseline_graph_delta_summary": graph_summary,
         },
         "findings": findings,
     }
@@ -276,15 +291,31 @@ def format_json_report(
 
 def format_sarif_report(findings: list[ScanFinding], root_path: str | None = None) -> str:
     """Build a SARIF 2.1.0 report for GitHub code scanning."""
+    return format_sarif_report_with_context(findings, root_path)
+
+
+def format_sarif_report_with_context(
+    findings: list[ScanFinding],
+    root_path: str | None = None,
+    *,
+    suppressed_findings: list[ScanFinding] | None = None,
+    diff: dict[str, Any] | None = None,
+) -> str:
+    """Build a SARIF 2.1.0 report for GitHub code scanning."""
     rules: dict[str, dict[str, Any]] = {}
     results: list[dict[str, Any]] = []
     root = Path(root_path).resolve() if root_path is not None else None
+    suppressed_findings = suppressed_findings or []
 
     for finding in ensure_fingerprints(findings, root_path):
         metadata = rule_metadata(finding["rule_id"])
         rule_name = metadata["short_name"] if metadata else finding["title"]
         rule_description = metadata["description"] if metadata else finding["description"]
         remediation = metadata["remediation"] if metadata else finding["remediation"]
+        confidence = finding.get("confidence") or (metadata["confidence"] if metadata else "unknown")
+        recommended_action = finding.get("recommended_action") or (
+            metadata["recommended_action"] if metadata else "warn"
+        )
         rules.setdefault(
             finding["rule_id"],
             {
@@ -296,6 +327,8 @@ def format_sarif_report(findings: list[ScanFinding], root_path: str | None = Non
                 "helpUri": metadata["help_uri"] if metadata else "",
                 "properties": {
                     "configType": finding["config_type"],
+                    "confidence": confidence,
+                    "recommendedAction": recommended_action,
                     "severity": finding["severity"],
                     "security-severity": _sarif_security_severity(finding["severity"]),
                     "precision": "high",
@@ -329,13 +362,23 @@ def format_sarif_report(findings: list[ScanFinding], root_path: str | None = Non
                 "properties": {
                     "configType": finding["config_type"],
                     "baselineStatus": finding.get("baseline_status", "active"),
+                    "baselineState": finding.get("baseline_state", finding.get("baseline_status", "active")),
                     "evidence": finding["evidence"],
+                    "confidence": confidence,
+                    "lokiredFingerprint": finding["fingerprint"],
+                    "policyAction": finding.get("policy_action", ""),
+                    "policyDecision": finding.get("policy_decision", finding.get("policy_action", "")),
+                    "recommendedAction": recommended_action,
                     "remediation": finding["remediation"],
                     "severity": finding["severity"],
                 },
+                **_sarif_related_locations(finding, root),
             }
         )
 
+    graph_summary = _graph_summary(diff)
+    graph_delta_count = sum(graph_summary.values())
+    resolved_count = int((diff or {}).get("summary", {}).get("resolved", 0)) if diff else 0
     payload = {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": "2.1.0",
@@ -347,6 +390,19 @@ def format_sarif_report(findings: list[ScanFinding], root_path: str | None = Non
                         "semanticVersion": "0.1.0",
                         "informationUri": "https://github.com/",
                         "rules": [rules[rule_id] for rule_id in sorted(rules)],
+                    }
+                },
+                "properties": {
+                    "lokired": {
+                        "activeFindingCount": len(findings),
+                        "suppressedFindingCount": len(suppressed_findings),
+                        "resolvedFindingCount": resolved_count,
+                        "graphDeltaCount": graph_delta_count,
+                        "graphDeltaAdded": graph_summary.get("added", 0),
+                        "graphDeltaRemoved": graph_summary.get("removed", 0),
+                        "graphDeltaChanged": graph_summary.get("changed", 0),
+                        "graphDeltaExpanded": graph_summary.get("expanded", 0),
+                        "graphDeltaNarrowed": graph_summary.get("narrowed", 0),
                     }
                 },
                 "results": sorted(
@@ -411,6 +467,68 @@ def _sarif_artifact_uri(file_path: str, root: Path | None) -> str:
         except ValueError:
             pass
     return path.as_posix()
+
+
+def _suppression_summary(
+    suppressed_findings: list[ScanFinding],
+    invalid_suppressions: list[dict[str, Any]],
+) -> dict[str, int]:
+    expired = sum(1 for item in invalid_suppressions if item.get("status") == "expired")
+    invalid = sum(1 for item in invalid_suppressions if item.get("status") != "expired")
+    return {
+        "suppressed": len(suppressed_findings),
+        "expired": expired,
+        "invalid": invalid,
+    }
+
+
+def _graph_summary(diff: dict[str, Any] | None) -> dict[str, int]:
+    empty = {
+        "added": 0,
+        "removed": 0,
+        "changed": 0,
+        "expanded": 0,
+        "narrowed": 0,
+    }
+    if not diff:
+        return empty
+    if isinstance(diff.get("graph_summary"), dict):
+        source = diff["graph_summary"]
+    else:
+        source = diff.get("inventory_graph", {}).get("summary", {})
+    return {
+        "added": int(source.get("added", 0)),
+        "removed": int(source.get("removed", 0)),
+        "changed": int(source.get("changed", 0)),
+        "expanded": int(source.get("expanded", 0)),
+        "narrowed": int(source.get("narrowed", 0)),
+    }
+
+
+def _sarif_related_locations(finding: ScanFinding, root: Path | None) -> dict[str, Any]:
+    related = []
+    primary_uri = _sarif_artifact_uri(finding["file_path"], root)
+    primary_line = max(finding["line"], 1)
+    for item in finding.get("related_locations", []):
+        file_path = str(item.get("file_path", ""))
+        if not file_path:
+            continue
+        line = max(int(item.get("line", 1)), 1)
+        uri = _sarif_artifact_uri(file_path, root)
+        if uri == primary_uri and line == primary_line:
+            continue
+        related.append(
+            {
+                "physicalLocation": {
+                    "artifactLocation": {"uri": uri},
+                    "region": {"startLine": line},
+                },
+                "message": {"text": str(item.get("message", "Related LokiRed evidence."))},
+            }
+        )
+    if not related:
+        return {}
+    return {"relatedLocations": related}
 
 
 def _display_file_path(file_path: str, root_path: str | None) -> str:

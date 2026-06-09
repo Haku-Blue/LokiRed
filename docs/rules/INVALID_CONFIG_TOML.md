@@ -1,49 +1,41 @@
-# INVALID_CONFIG_TOML
+# INVALID_CONFIG_TOML: Invalid TOML config
 
-## Title
+## Summary
 
-Invalid TOML config.
+Detects Codex TOML configuration files that cannot be parsed structurally.
 
-## Purpose
+## Trigger
 
-Detect Codex TOML config files that cannot be parsed structurally.
-
-## What It Detects
-
-Malformed TOML in `.codex/config.toml`.
-
-## Why It Matters
-
-Codex policy may not load as expected when the configuration cannot be parsed.
+Triggers when `.codex/config.toml` raises a TOML parse error.
 
 ## Severity
 
 Medium.
 
-## Supported Ecosystems
+## Confidence
 
-Codex config.
+High. The parser deterministically reports malformed TOML.
 
-## Triggers
+## Recommended action
 
-```toml
-approval_policy = "never
-```
+Block until the TOML syntax is fixed and the file can be evaluated.
 
-## Does Not Trigger
+## Why it matters
 
-```toml
-approval_policy = "on-request"
-```
+Codex policy and approval settings may not load as expected when the configuration cannot be parsed.
+
+## Evidence
+
+Evidence includes the TOML parse error. LokiRed reports line 1 when the parser does not expose a more precise location.
 
 ## Remediation
 
 Fix the TOML syntax and rerun LokiRed so Codex settings can be evaluated structurally.
 
-## Suppression Guidance
+## False-positive considerations
 
-Do not suppress unless the file is intentionally inert test data.
+This is direct parser evidence. Suppression is usually appropriate only for intentionally inert test data.
 
-## Known Limitations
+## Suppression guidance
 
-The Python TOML parser does not expose precise line numbers for every parse error, so LokiRed reports line 1 for malformed TOML.
+Prefer fixing the file. Suppressions require `rule_id`, `path`, `reason`, `owner`, and `expires`.

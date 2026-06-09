@@ -1,52 +1,41 @@
-# UNSAFE_APPROVAL_MODE
+# UNSAFE_APPROVAL_MODE: Agent approval boundary is weakened
 
-## Title
+## Summary
 
-Agent approval boundary is weakened.
+Detects configuration or instructions that bypass, disable, or weaken approval prompts.
 
-## Purpose
+## Trigger
 
-Detect configuration or instructions that bypass, disable, or weaken approval prompts.
-
-## What It Detects
-
-- Claude `permissions.defaultMode` set to `bypassPermissions`.
-- Codex `approval_policy` set to `never`.
-- Agent-facing instruction text that encourages bypassing approval boundaries.
-
-## Why It Matters
-
-Approval prompts are a key boundary for semi-autonomous agent activity. Bypassing them can let risky tool use proceed without human review.
+Triggers on Claude `permissions.defaultMode = "bypassPermissions"`, Codex `approval_policy = "never"`, or supported instruction text that encourages bypassing approval boundaries.
 
 ## Severity
 
-Critical when paired with unrestricted Codex sandbox access or Claude bypass mode. Medium for instruction text that weakens approval boundaries.
+Critical by catalog default. Some scanner findings may use medium severity for instruction text where the evidence is less direct.
 
-## Supported Ecosystems
+## Confidence
 
-Claude settings, Codex config, Cursor rules, GitHub Copilot instruction/prompt/setup files, and general agent instruction files.
+High. Structured configuration matches are exact; instruction matches are deterministic and avoid clearly negated lines.
 
-## Triggers
+## Recommended action
 
-```toml
-approval_policy = "never"
-sandbox_mode = "danger-full-access"
-```
+Block until approval prompts are restored or the exception is explicitly reviewed.
 
-## Does Not Trigger
+## Why it matters
 
-```markdown
-Never bypass approval prompts for destructive commands.
-```
+Approval prompts are a key boundary for semi-autonomous agent activity. Bypassing them can let risky tool use proceed without human review.
+
+## Evidence
+
+Evidence includes the config path or instruction line and the approval-related value or snippet.
 
 ## Remediation
 
 Use an approval mode that prompts before risky tool use in shared or CI-controlled workspaces.
 
-## Suppression Guidance
+## False-positive considerations
 
-Suppress only for isolated disposable environments, and include an expiry date.
+Instruction text can be contextual. LokiRed skips clearly negated lines such as instructions to never bypass approvals.
 
-## Known Limitations
+## Suppression guidance
 
-Instruction text detection uses deterministic phrase matching and avoids lines that clearly negate the risky behavior.
+Suppress only for isolated disposable environments with an expiry date. Suppressions require `rule_id`, `path`, `reason`, `owner`, and `expires`.

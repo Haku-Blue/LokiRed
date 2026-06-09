@@ -1,62 +1,41 @@
-# MCP_AUTO_APPROVAL
+# MCP_AUTO_APPROVAL: MCP tools can run without per-use approval
 
-## Title
+## Summary
 
-MCP tools can run without per-use approval.
+Detects MCP server or tool settings that reduce per-use approval checkpoints.
 
-## Purpose
+## Trigger
 
-Detect MCP server or tool settings that reduce human review before tool execution.
-
-## What It Detects
-
-- `default_tools_approval_mode` set to `approve` or `auto`.
-- Per-tool `approval_mode` set to `approve` or `auto`.
-
-## Why It Matters
-
-Auto-approved MCP tools may read, write, or mutate external systems without a fresh human approval prompt.
+Triggers on `default_tools_approval_mode` or per-tool `approval_mode` values of `approve` or `auto`.
 
 ## Severity
 
 Medium.
 
-## Supported Ecosystems
+## Confidence
 
-Generic MCP, Claude MCP, Cursor MCP, Windsurf MCP, and Codex MCP server config.
+High. The finding is based on exact structured approval-mode values.
 
-## Triggers
+## Recommended action
 
-```json
-{
-  "mcpServers": {
-    "tickets": {
-      "default_tools_approval_mode": "auto"
-    }
-  }
-}
-```
+Warn by default, then review whether the affected server or tool is truly low risk.
 
-## Does Not Trigger
+## Why it matters
 
-```json
-{
-  "mcpServers": {
-    "tickets": {
-      "default_tools_approval_mode": "prompt"
-    }
-  }
-}
-```
+Auto-approved MCP tools may read, write, or mutate external systems without a fresh human approval prompt.
+
+## Evidence
+
+Evidence includes the config path, server name, tool name when available, and approval value.
 
 ## Remediation
 
-Set approval mode to prompt and scope auto-approved tools to explicitly low-risk read-only operations.
+Set approval mode to `prompt` and scope auto-approved tools to explicitly low-risk read-only operations.
 
-## Suppression Guidance
+## False-positive considerations
 
-Suppress only for narrow read-only tools. Include the owner who reviewed the tool scope.
+The configuration value is direct, but LokiRed does not inspect the server implementation to prove whether a tool is read-only.
 
-## Known Limitations
+## Suppression guidance
 
-LokiRed does not inspect MCP server implementation code, so it does not infer whether a named tool is truly read-only.
+Suppress only for narrow, reviewed, low-risk tools. Suppressions require `rule_id`, `path`, `reason`, `owner`, and `expires`.
