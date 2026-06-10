@@ -410,11 +410,14 @@ def _logical_graph_key(collection: str, record: dict[str, Any]) -> str:
             ]
         )
     if collection == "capabilities":
+        operation = str(record.get("operation", record.get("access_level", "")))
+        if str(record.get("category", "")) == "filesystem":
+            operation = "filesystem"
         return "|".join(
             [
                 str(record.get("subject_id", "")),
                 str(record.get("category", "")),
-                str(record.get("operation", record.get("access_level", ""))),
+                operation,
             ]
         )
     return str(record.get("id", ""))

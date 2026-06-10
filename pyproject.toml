@@ -51,6 +51,7 @@ py-modules = [
     "baseline",
     "classification",
     "fingerprints",
+    "git_snapshots",
     "inventory",
     "lokired",
     "policy",
