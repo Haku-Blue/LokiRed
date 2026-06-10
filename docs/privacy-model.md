@@ -10,11 +10,11 @@ Raw secret values must not be emitted. Environment-variable names may be recorde
 
 ## Data processed
 
-The CLI may read known agent configuration files, MCP configuration files, instruction files, policy files, baselines, and supported workspace configuration files below the scanned path.
+The CLI may read known agent configuration files, MCP configuration files, instruction files, policy files, baselines, supported workspace configuration files, Claude hook declarations, Codex permission profiles, VS Code MCP files, dev-container MCP customizations, and committed Copilot setup workflows below the scanned path.
 
 ## Data emitted
 
-The CLI may emit text findings, JSON inventory and findings, SARIF findings, baseline fingerprints, graph snapshots, redacted evidence, policy decisions, and suppression metadata.
+The CLI may emit text findings, JSON inventory and findings, SARIF findings, baseline fingerprints, graph snapshots, redacted evidence, policy decisions, suppression metadata, environment-variable names, static hook/setup command targets after redaction, and coverage warnings for surfaces outside the scan boundary.
 
 ## Data not emitted by default
 

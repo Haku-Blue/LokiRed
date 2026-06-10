@@ -9,6 +9,16 @@ import tomllib
 from pathlib import Path
 from typing import Any, TypedDict
 
+from config_adapters import (
+    MCP_CONFIG_TYPES,
+    config_scope_for_type,
+    hook_target,
+    hook_type,
+    iter_claude_hook_entries,
+    iter_mcp_server_entries,
+    iter_workflow_run_commands,
+    mcp_secret_scan_roots,
+)
 from security_file_scanner import (
     SECRET_ASSIGNMENT_PATTERN,
     SECRET_KEY_PATTERN,
@@ -214,16 +224,21 @@ class _InventoryBuilder:
                 "kind": "agent_config",
                 "name": f"{config_type}:{relative_path}",
                 "source": source,
-                "metadata": {"ecosystem": config_type},
+                "metadata": {
+                    "ecosystem": config_type,
+                    "config_scope": config_scope_for_type(config_type),
+                },
             }
         )
 
-        if config_type in {"claude_mcp", "cursor_mcp", "generic_mcp", "windsurf_mcp"}:
+        if config_type in MCP_CONFIG_TYPES:
             self._add_mcp_json(target, config_text, file_resource_id, identity_id)
         elif config_type == "claude_settings":
             self._add_claude_settings(target, config_text, file_resource_id, identity_id)
         elif config_type == "codex_config":
             self._add_codex_config(target, config_text, file_resource_id, identity_id)
+        elif config_type == "github_copilot_setup":
+            self._add_copilot_setup_workflow(target, config_text, file_resource_id, identity_id)
         else:
             self._add_instruction_text(target, config_text, file_resource_id, identity_id)
 
@@ -240,20 +255,28 @@ class _InventoryBuilder:
             return
         if not isinstance(parsed, dict):
             return
-        servers = parsed.get("mcpServers")
-        if not isinstance(servers, dict):
-            return
-        for server_name, server in sorted(servers.items()):
-            if isinstance(server, dict):
-                self._add_mcp_server(
-                    target,
-                    config_text,
-                    server,
-                    ["mcpServers", str(server_name)],
-                    str(server_name),
-                    file_resource_id,
-                    identity_id,
-                )
+        for entry in iter_mcp_server_entries(parsed, target["config_type"]):
+            self._add_mcp_server(
+                target,
+                config_text,
+                entry["server"],
+                entry["path"],
+                entry["name"],
+                file_resource_id,
+                identity_id,
+                config_scope=entry["config_scope"],
+            )
+        if target["config_type"] in {"vscode_mcp", "devcontainer_config"}:
+            for config_root, base_path in mcp_secret_scan_roots(parsed, target["config_type"]):
+                if isinstance(config_root, dict):
+                    self._add_vscode_mcp_sandbox(
+                        target,
+                        config_text,
+                        file_resource_id,
+                        identity_id,
+                        config_root,
+                        base_path,
+                    )
 
     def _add_codex_config(
         self,
@@ -310,6 +333,30 @@ class _InventoryBuilder:
                 "workspace",
                 {"setting": "default_permissions", "value": default_permissions},
             )
+
+        sandbox_workspace_write = parsed.get("sandbox_workspace_write")
+        if isinstance(sandbox_workspace_write, dict):
+            self._add_codex_workspace_sandbox(
+                target,
+                config_text,
+                file_resource_id,
+                identity_id,
+                sandbox_workspace_write,
+            )
+
+        permissions = parsed.get("permissions")
+        if isinstance(default_permissions, str) and isinstance(permissions, dict):
+            profile_name = default_permissions.removeprefix(":")
+            profile = permissions.get(profile_name)
+            if isinstance(profile, dict):
+                self._add_codex_permission_profile(
+                    target,
+                    config_text,
+                    file_resource_id,
+                    identity_id,
+                    profile_name,
+                    profile,
+                )
 
         servers = parsed.get("mcp_servers")
         if isinstance(servers, dict):
@@ -385,6 +432,266 @@ class _InventoryBuilder:
                 {"setting": "enableAllProjectMcpServers", "value": True},
             )
 
+        for hook_entry in iter_claude_hook_entries(parsed):
+            self._add_claude_hook(target, config_text, file_resource_id, identity_id, hook_entry)
+
+    def _add_vscode_mcp_sandbox(
+        self,
+        target: ConfigTarget,
+        config_text: str,
+        file_resource_id: str,
+        identity_id: str,
+        config_root: dict[str, Any],
+        base_path: list[str],
+    ) -> None:
+        sandbox = config_root.get("sandbox")
+        if not isinstance(sandbox, dict):
+            return
+        filesystem = sandbox.get("filesystem")
+        if isinstance(filesystem, dict):
+            for key, access in (("allowWrite", "write"), ("denyRead", "deny"), ("denyWrite", "deny")):
+                values = filesystem.get(key)
+                if not isinstance(values, list):
+                    continue
+                for index, value in enumerate(values):
+                    if isinstance(value, str):
+                        self._add_permission(
+                            target,
+                            config_text,
+                            file_resource_id,
+                            identity_id,
+                            base_path + ["sandbox", "filesystem", key, f"[{index}]"],
+                            "filesystem",
+                            access,
+                            _normalize_vscode_sandbox_target(value),
+                            {"setting": f"sandbox.filesystem.{key}", "target": _normalize_vscode_sandbox_target(value)},
+                        )
+        network = sandbox.get("network")
+        if isinstance(network, dict):
+            for key, access in (("allowedDomains", "connect"), ("deniedDomains", "constrained")):
+                values = network.get(key)
+                if not isinstance(values, list):
+                    continue
+                for index, value in enumerate(values):
+                    if isinstance(value, str):
+                        self._add_permission(
+                            target,
+                            config_text,
+                            file_resource_id,
+                            identity_id,
+                            base_path + ["sandbox", "network", key, f"[{index}]"],
+                            "network",
+                            access,
+                            value,
+                            {"setting": f"sandbox.network.{key}", "target": value},
+                        )
+
+    def _add_codex_workspace_sandbox(
+        self,
+        target: ConfigTarget,
+        config_text: str,
+        file_resource_id: str,
+        identity_id: str,
+        sandbox_config: dict[str, Any],
+    ) -> None:
+        writable_roots = sandbox_config.get("writable_roots")
+        if isinstance(writable_roots, list):
+            for index, root in enumerate(writable_roots):
+                if isinstance(root, str):
+                    self._add_permission(
+                        target,
+                        config_text,
+                        file_resource_id,
+                        identity_id,
+                        ["sandbox_workspace_write", "writable_roots", f"[{index}]"],
+                        "filesystem",
+                        "write",
+                        root,
+                        {"setting": "sandbox_workspace_write.writable_roots", "target": root},
+                    )
+        network_access = sandbox_config.get("network_access")
+        if isinstance(network_access, bool):
+            self._add_permission(
+                target,
+                config_text,
+                file_resource_id,
+                identity_id,
+                ["sandbox_workspace_write", "network_access"],
+                "network",
+                "connect" if network_access else "constrained",
+                "outbound",
+                {"setting": "sandbox_workspace_write.network_access", "value": network_access},
+            )
+
+    def _add_codex_permission_profile(
+        self,
+        target: ConfigTarget,
+        config_text: str,
+        file_resource_id: str,
+        identity_id: str,
+        profile_name: str,
+        profile: dict[str, Any],
+    ) -> None:
+        filesystem = profile.get("filesystem")
+        if isinstance(filesystem, dict):
+            for path_key, access in sorted(filesystem.items()):
+                if isinstance(access, str):
+                    self._add_permission(
+                        target,
+                        config_text,
+                        file_resource_id,
+                        identity_id,
+                        ["permissions", profile_name, "filesystem", str(path_key)],
+                        "filesystem",
+                        access,
+                        str(path_key),
+                        {
+                            "setting": f"permissions.{profile_name}.filesystem",
+                            "target": str(path_key),
+                            "access": access,
+                        },
+                    )
+                elif isinstance(access, dict):
+                    for child_path, child_access in sorted(access.items()):
+                        if isinstance(child_access, str):
+                            target_path = f"{path_key}/{child_path}"
+                            self._add_permission(
+                                target,
+                                config_text,
+                                file_resource_id,
+                                identity_id,
+                                ["permissions", profile_name, "filesystem", str(path_key), str(child_path)],
+                                "filesystem",
+                                child_access,
+                                target_path,
+                                {
+                                    "setting": f"permissions.{profile_name}.filesystem.{path_key}",
+                                    "target": target_path,
+                                    "access": child_access,
+                                },
+                            )
+        network = profile.get("network")
+        if isinstance(network, dict):
+            enabled = network.get("enabled")
+            if isinstance(enabled, bool):
+                self._add_permission(
+                    target,
+                    config_text,
+                    file_resource_id,
+                    identity_id,
+                    ["permissions", profile_name, "network", "enabled"],
+                    "network",
+                    "connect" if enabled else "constrained",
+                    "outbound",
+                    {
+                        "setting": f"permissions.{profile_name}.network.enabled",
+                        "value": enabled,
+                    },
+                )
+            domains = network.get("domains")
+            if isinstance(domains, dict):
+                for domain, action in sorted(domains.items()):
+                    if isinstance(action, str):
+                        self._add_permission(
+                            target,
+                            config_text,
+                            file_resource_id,
+                            identity_id,
+                            ["permissions", profile_name, "network", "domains", str(domain)],
+                            "network",
+                            "connect" if action == "allow" else "constrained",
+                            str(domain),
+                            {
+                                "setting": f"permissions.{profile_name}.network.domains",
+                                "target": str(domain),
+                                "access": action,
+                            },
+                        )
+
+    def _add_claude_hook(
+        self,
+        target: ConfigTarget,
+        config_text: str,
+        file_resource_id: str,
+        identity_id: str,
+        hook_entry: dict[str, Any],
+    ) -> None:
+        hook = hook_entry["hook"]
+        kind = hook_type(hook)
+        target_value = hook_target(hook)
+        if kind == "command" and target_value:
+            self._add_permission(
+                target,
+                config_text,
+                file_resource_id,
+                identity_id,
+                hook_entry["path"] + ["command"],
+                "command_execution",
+                "execute",
+                "hook",
+                {
+                    "event": hook_entry["event"],
+                    "matcher": hook_entry.get("matcher", ""),
+                    "hook_type": kind,
+                    "command": target_value,
+                },
+            )
+        elif kind == "http" and target_value:
+            self._add_permission(
+                target,
+                config_text,
+                file_resource_id,
+                identity_id,
+                hook_entry["path"] + ["url"],
+                "network",
+                "connect",
+                "remote_service" if not _is_local_url(target_value) else "localhost",
+                {
+                    "event": hook_entry["event"],
+                    "matcher": hook_entry.get("matcher", ""),
+                    "hook_type": kind,
+                    "url": target_value,
+                },
+            )
+        elif kind == "prompt" and target_value:
+            self._add_permission(
+                target,
+                config_text,
+                file_resource_id,
+                identity_id,
+                hook_entry["path"] + ["prompt"],
+                "prompt_hook",
+                "evaluate",
+                "hook",
+                {
+                    "event": hook_entry["event"],
+                    "matcher": hook_entry.get("matcher", ""),
+                    "hook_type": kind,
+                    "prompt": target_value,
+                },
+            )
+
+    def _add_copilot_setup_workflow(
+        self,
+        target: ConfigTarget,
+        config_text: str,
+        file_resource_id: str,
+        identity_id: str,
+    ) -> None:
+        for command in iter_workflow_run_commands(config_text):
+            self._add_permission(
+                target,
+                config_text,
+                file_resource_id,
+                identity_id,
+                command["path"],
+                "command_execution",
+                "execute",
+                "github_actions_setup",
+                {"workflow": "copilot-setup-steps", "command": command["command"]},
+                line_override=command["line"],
+            )
+
     def _add_instruction_text(
         self,
         target: ConfigTarget,
@@ -453,6 +760,8 @@ class _InventoryBuilder:
         server_name: str,
         file_resource_id: str,
         identity_id: str,
+        *,
+        config_scope: str | None = None,
     ) -> None:
         file_path = Path(target["file_path"]).resolve()
         relative_path = _relative_path(file_path, self.root)
@@ -472,14 +781,21 @@ class _InventoryBuilder:
         metadata: dict[str, Any] = {
             "config_path": config_path,
             "parent_resource_id": file_resource_id,
+            "config_scope": config_scope or config_scope_for_type(target["config_type"]),
         }
         if isinstance(command, str):
             metadata["command"] = _redact_command_part(command)
         if arguments:
             metadata["arguments"] = [_redact_command_part(arg) for arg in arguments]
+        server_type = server.get("type")
         if isinstance(url, str):
             metadata["remote_url"] = url
-            metadata["transport"] = "http" if url.startswith("http://") else "https" if url.startswith("https://") else "remote"
+            if server_type == "sse":
+                metadata["transport"] = "sse"
+            elif server_type == "http":
+                metadata["transport"] = "http" if url.startswith("http://") else "https" if url.startswith("https://") else "http"
+            else:
+                metadata["transport"] = "http" if url.startswith("http://") else "https" if url.startswith("https://") else "remote"
         elif isinstance(command, str) or isinstance(args, list):
             metadata["transport"] = "stdio"
         metadata["package_source"] = _infer_package_source(command, arguments, url)
@@ -555,6 +871,37 @@ class _InventoryBuilder:
                         str(key),
                         value,
                     )
+
+        tools_list = server.get("tools")
+        if isinstance(tools_list, list):
+            metadata["declared_tools"] = [str(tool) for tool in tools_list]
+            for index, tool in enumerate(tools_list):
+                self._add_permission(
+                    target,
+                    config_text,
+                    server_resource_id,
+                    identity_id,
+                    server_path + ["tools", f"[{index}]"],
+                    "tool_access",
+                    "allow",
+                    "server_tool",
+                    {"server": server_name, "tool": str(tool)},
+                )
+
+        enabled_tools = server.get("enabled_tools")
+        if isinstance(enabled_tools, list):
+            for index, tool in enumerate(enabled_tools):
+                self._add_permission(
+                    target,
+                    config_text,
+                    server_resource_id,
+                    identity_id,
+                    server_path + ["enabled_tools", f"[{index}]"],
+                    "tool_access",
+                    "allow",
+                    "server_tool",
+                    {"server": server_name, "tool": str(tool)},
+                )
 
         approval_mode = server.get("default_tools_approval_mode")
         if isinstance(approval_mode, str):
@@ -804,12 +1151,13 @@ def _build_explicit_graph(
         source = identity.get("source", {})
         ecosystem = str(identity.get("metadata", {}).get("ecosystem", source.get("config_type", "")))
         relative_path = str(source.get("relative_path", identity.get("name", "")))
+        config_scope = str(identity.get("metadata", {}).get("config_scope", "workspace"))
         evidence_id = evidence_for(source, {"kind": "client", "name": identity.get("name", "")})
         clients.append(
             {
                 "id": identity["id"],
                 "ecosystem": ecosystem,
-                "config_scope": "workspace",
+                "config_scope": config_scope,
                 "config_artifact": relative_path,
                 "evidence_ids": [evidence_id],
             }
@@ -847,7 +1195,7 @@ def _build_explicit_graph(
             "id": resource["id"],
             "client_id": client_id,
             "display_name": str(resource.get("name", "")),
-            "config_scope": "workspace",
+            "config_scope": str(metadata.get("config_scope", "workspace")),
             "evidence_ids": [evidence_id],
         }
         for optional_key in ("transport", "command", "remote_url"):
@@ -887,6 +1235,8 @@ def _build_explicit_graph(
                 "category": str(permission.get("category", "")),
                 "operation": str(permission.get("access", "")),
                 "access_level": str(permission.get("access", "")),
+                "normalized_category": _normalized_capability_category(permission),
+                "normalized_access_level": _normalized_capability_access(permission),
                 "target": _capability_target(permission, resource_by_id.get(subject_id, {})),
                 "confidence": _capability_confidence(
                     str(permission.get("category", "")),
@@ -913,8 +1263,17 @@ def _capability_target(permission: InventoryPermission, resource: InventoryResou
     raw = permission.get("raw", {})
     if category == "filesystem" and access in {"danger-full-access", ":danger-full-access", "full_access"}:
         return "/"
+    if category == "filesystem" and isinstance(raw.get("target"), str):
+        target = str(raw["target"])
+        if target == ":root":
+            return "/"
+        if target == ":workspace_roots/.":
+            return "workspace"
+        return target
     if category == "network" and isinstance(raw.get("url"), str):
         return str(raw["url"])
+    if category == "network" and isinstance(raw.get("target"), str):
+        return str(raw["target"])
     if category in {"secret", "environment"} and isinstance(raw.get("key"), str):
         return str(raw["key"])
     if isinstance(raw.get("tool"), str):
@@ -922,6 +1281,54 @@ def _capability_target(permission: InventoryPermission, resource: InventoryResou
     if isinstance(raw.get("server"), str):
         return str(raw["server"])
     return scope or str(resource.get("name", ""))
+
+
+def _normalized_capability_category(permission: InventoryPermission) -> str:
+    category = str(permission.get("category", ""))
+    scope = str(permission.get("scope", ""))
+    if category == "filesystem":
+        return "filesystem"
+    if category == "network":
+        return "network"
+    if category in {"secret", "credential_exposure"}:
+        return "secret"
+    if category == "command_execution":
+        return "shell"
+    if category == "tool_access" and scope == "github_actions_setup":
+        return "repository"
+    if category == "approval_boundary":
+        return "identity"
+    return "unknown"
+
+
+def _normalized_capability_access(permission: InventoryPermission) -> str:
+    category = str(permission.get("category", ""))
+    access = str(permission.get("access", ""))
+    if category == "command_execution":
+        return "execute"
+    if category in {"secret", "credential_exposure"}:
+        return "read"
+    if category == "network":
+        return "read" if access == "connect" else "unknown"
+    if category == "filesystem":
+        if access in {"read", "deny"}:
+            return "read" if access == "read" else "unknown"
+        if access in {"write", "workspace-write", ":workspace"}:
+            return "write"
+        if access in {"danger-full-access", ":danger-full-access", "full_access"}:
+            return "admin"
+    if category == "approval_boundary":
+        return "admin" if access in {"never", "bypassPermissions", "bypass"} else "unknown"
+    return "unknown"
+
+
+def _normalize_vscode_sandbox_target(value: str) -> str:
+    stripped = value.strip()
+    if stripped in {"${workspaceFolder}", "${workspaceFolder}/", "."}:
+        return "workspace"
+    if stripped in {"${userHome}", "${userHome}/"}:
+        return "home"
+    return stripped
 
 
 def _redact_details(value: Any) -> Any:
@@ -975,10 +1382,24 @@ def _extract_version_or_digest(command: Any, arguments: list[str]) -> str:
 
 
 def _environment_variable_names(server: dict[str, Any]) -> list[str]:
+    names: set[str] = set()
     env = server.get("env")
-    if not isinstance(env, dict):
-        return []
-    return sorted({str(key) for key in env})
+    if isinstance(env, dict):
+        names.update(str(key) for key in env)
+    env_vars = server.get("env_vars")
+    if isinstance(env_vars, list):
+        for item in env_vars:
+            if isinstance(item, str):
+                names.add(item)
+            elif isinstance(item, dict) and isinstance(item.get("name"), str):
+                names.add(str(item["name"]))
+    bearer = server.get("bearer_token_env_var")
+    if isinstance(bearer, str):
+        names.add(bearer)
+    env_http_headers = server.get("env_http_headers")
+    if isinstance(env_http_headers, dict):
+        names.update(str(value) for value in env_http_headers.values() if isinstance(value, str))
+    return sorted(names)
 
 
 def _capability_provenance(category: str) -> str:

@@ -50,6 +50,7 @@ lokired = "lokired:main"
 py-modules = [
     "baseline",
     "classification",
+    "config_adapters",
     "fingerprints",
     "git_snapshots",
     "inventory",

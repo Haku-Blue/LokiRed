@@ -2,7 +2,7 @@
 
 LokiRed is local-first. A scan reads files from the repository or workspace you point it at, applies deterministic rules, evaluates optional local policy and baseline files, and renders text, JSON, or SARIF. It does not require a remote service or telemetry.
 
-See the [threat model](threat-model.md) and [privacy model](privacy-model.md) for explicit security and data-handling boundaries.
+See the [coverage matrix](coverage.md), [threat model](threat-model.md), and [privacy model](privacy-model.md) for explicit scanner, security, and data-handling boundaries.
 
 ## Scan Flow
 
@@ -17,7 +17,9 @@ See the [threat model](threat-model.md) and [privacy model](privacy-model.md) fo
 
 ## Current Scope
 
-The current CLI scans supported files below the path you provide. It does not automatically read local user-profile settings outside that path, repository settings stored only in SaaS control planes, or runtime MCP traffic. Configured MCP commands, hooks, and package-manager commands are treated as data and are not executed.
+The current CLI scans supported files below the path you provide. It does not automatically read local user-profile settings outside that path, repository settings stored only in SaaS control planes, or runtime MCP traffic. Configured MCP commands, Claude hooks, Copilot setup commands, and package-manager commands are treated as data and are not executed.
+
+JSON and Markdown review output include coverage warnings for relevant blind spots, such as VS Code user-profile MCP settings, user-level Copilot CLI MCP configuration, GitHub SaaS-managed repository MCP settings, and other local-only client settings outside the explicit scan root. These warnings are report metadata, not blocking findings.
 
 For pull requests today, use `lokired scan` with policy, baselines, JSON, SARIF, and CI thresholds, or `lokired diff` / `lokired policy check` when you need an explicit Git-ref comparison. LokiRed does not yet ship a hosted pull-request review app.
 
@@ -41,6 +43,8 @@ The schema contains:
 Records are sorted deterministically. Identifiers are stable hashes of repo-relative path, ecosystem, source path, and record-specific fields. Future schema additions should be optional so existing consumers keep working.
 
 Server records are enriched only from statically available configuration. They include transport, command, arguments, remote URL, package source, explicitly pinned version or digest when present, environment-variable names, config scope, and evidence ids. Environment-variable names may be recorded, but values are not emitted.
+
+Capability records preserve legacy `category`, `operation`, and `access_level` fields and may also include optional `normalized_category` and `normalized_access_level` fields. The normalized fields use a small compatibility vocabulary such as `filesystem`, `repository`, `shell`, `network`, `secret`, `identity`, or `unknown` plus access levels such as `read`, `write`, `execute`, `admin`, or `unknown`.
 
 Capability provenance is `declared` when configuration directly states access, and `static_inferred` when LokiRed derives the capability from paths, commands, allow rules, environment-variable references, or other static evidence. Capability confidence uses the same evidence-strength vocabulary as findings.
 
