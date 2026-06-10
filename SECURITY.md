@@ -4,7 +4,7 @@ LokiRed is a security tool, so vulnerability reports and reports of scanner bypa
 
 ## Supported Versions
 
-The supported version is the current `main` branch until tagged releases are established.
+Security fixes target the latest tagged 0.1.x release and the current `main` branch. LokiRed is pre-1.0, so older 0.1.x tags do not have long-term support guarantees; please upgrade to the latest patch release when fixes are available.
 
 ## Reporting A Vulnerability
 

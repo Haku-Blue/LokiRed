@@ -14,9 +14,9 @@ LokiRed is built for teams using tools such as Codex, Claude Code, Cursor, Winds
 
 ## Project Status
 
-LokiRed Community is an early CLI-first MVP. The scanner is deterministic, local-first, and designed to prove useful before any hosted dashboard or cloud workflow is required.
+LokiRed Community v0.1.0 is an early CLI-first MVP. The scanner is deterministic, local-first, and useful without a hosted service.
 
-The output schema, supported ecosystems, and rule set may evolve while the project is pre-1.0, but the goal is stable, evidence-first findings that can run repeatably in CI.
+The current 0.1.x line focuses on repo and workspace scanning, CI enforcement, normalized inventory, policy, suppressions, baselines, and SARIF. Output schema details, supported ecosystems, and the rule set may still evolve while the project is pre-1.0, but the goal is stable, evidence-first findings that can run repeatably in CI.
 
 ## What LokiRed Checks
 
@@ -65,7 +65,7 @@ LokiRed skips common generated or dependency folders such as `.git`, `node_modul
 - No third-party Python packages are required for scanner runtime.
 - SARIF schema-validation tests use the optional `test` extra.
 
-On Windows, make sure `python --version` works before continuing. This workspace includes a local shim so `python` should already resolve correctly.
+On Windows, make sure `python --version` works before continuing.
 
 ## Install For Local Development
 
@@ -523,7 +523,7 @@ When scanning this repository root, `.lokired.yml` suppresses these intentionall
 Run the test suite:
 
 ```powershell
-python -m pip install -e .[test]
+python -m pip install -e ".[test]"
 python -m unittest discover -s tests -v
 ```
 
@@ -590,6 +590,7 @@ Current limitations:
 - Its built-in YAML parser supports the policy subset documented in this repository rather than the full YAML specification.
 - Repository scans do not automatically cover local user-profile settings outside the scanned path.
 - Repository scans do not automatically cover SaaS-managed repository settings.
+- It does not yet ship a hosted GitHub App or team dashboard.
 - The initial CLI does not observe runtime MCP traffic or tool calls.
 
 ## Rule Documentation
@@ -627,13 +628,18 @@ LokiRed's MVP design goal is to stay evidence-first:
 
 ## Roadmap Ideas
 
-Likely next steps:
+Near-term direction after v0.1.0:
 
-- More agent ecosystems and config formats.
-- More granular MCP server/tool risk rules.
-- GitHub App integration for pull request checks.
-- Team inventory dashboard.
-- Runtime MCP gateway or proxy with policy and audit logs.
+- Keep improving pull-request review artifacts around baseline inventory and graph deltas.
+- Expand high-signal coverage for repo-visible agent and MCP configuration surfaces.
+- Make GitHub Action onboarding and branch-protection rollout easier for warn-only and enforced modes.
+- Keep policy, suppressions, and rule documentation practical for AppSec, platform, DevEx, and developer reviewers.
+
+Longer-term direction:
+
+- GitHub App and team inventory views for organization-wide coverage, policy, exceptions, and evidence.
+- Optional endpoint visibility for local user-profile agent configuration that is outside repository scans.
+- Runtime MCP enforcement or gateway work only after the static governance workflow proves demand.
 
 ## License
 
