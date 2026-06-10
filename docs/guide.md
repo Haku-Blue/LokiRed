@@ -15,6 +15,12 @@ See the [threat model](threat-model.md) and [privacy model](privacy-model.md) fo
 7. Render text, JSON, or SARIF output.
 8. Apply the CI threshold to active findings. In baseline mode, the threshold applies only to new active findings.
 
+## Current Scope
+
+The current CLI scans supported files below the path you provide. It does not automatically read local user-profile settings outside that path, repository settings stored only in SaaS control planes, or runtime MCP traffic. Configured MCP commands, hooks, and package-manager commands are treated as data and are not executed.
+
+For pull requests today, use `lokired scan` with policy, baselines, JSON, SARIF, and CI thresholds, or `lokired diff` / `lokired policy check` when you need an explicit Git-ref comparison. LokiRed does not yet ship a hosted pull-request review app.
+
 ## Normalized Inventory
 
 JSON output includes `inventory.normalized` with schema version `1.0`.
@@ -68,7 +74,7 @@ Example JSON shape:
 
 The rule catalog is the single source of truth for rule id, title, severity, confidence, recommended action, documentation path, risk, and remediation.
 
-Confidence values are `high`, `medium`, `low`, and `unknown`. Recommended actions are `warn` and `block`. Recommended action is report metadata for transparency and future policy integration; it does not replace the existing `--fail-on` severity threshold.
+Confidence values are `high`, `medium`, `low`, and `unknown`. Recommended actions are `warn` and `block`. Recommended action is report metadata for transparency and policy design; it does not replace the existing `--fail-on` severity threshold.
 
 Use local catalog inspection without scanning files:
 
@@ -223,6 +229,8 @@ Severity mapping:
 ## GitHub Action
 
 The repository includes `action.yml`, a thin composite action that installs LokiRed from the checkout and invokes the CLI.
+
+Inside this repository, `uses: ./` runs the checked-out action. In other repositories, pin LokiRed to a release tag or a reviewed commit instead of relying on an unpinned branch.
 
 Inputs:
 

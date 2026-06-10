@@ -7,7 +7,7 @@ Thanks for helping improve LokiRed. The project is early, CLI-first, and intenti
 Use Python 3.11 or newer.
 
 ```powershell
-python -m pip install -e .
+python -m pip install -e ".[test]"
 python -m unittest discover -s tests -v
 ```
 

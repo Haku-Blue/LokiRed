@@ -18,7 +18,7 @@ High. Policy findings are deterministic matches between normalized static invent
 
 ## Recommended action
 
-Block for `block` and legacy `deny` policy decisions. `warn` and `require-review` findings carry their explicit policy decision in reports.
+Block for `block`, legacy `deny`, and `require-review` policy decisions. `warn` findings carry their explicit policy decision in reports but do not fail CI by themselves.
 
 ## Why it matters
 
