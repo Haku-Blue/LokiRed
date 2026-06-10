@@ -53,10 +53,12 @@ CONFIG_TYPE_LABELS = {
     "cursor_legacy_rules": "Cursor legacy rules",
     "cursor_mcp": "Cursor MCP configuration",
     "cursor_rules": "Cursor rules",
+    "devcontainer_config": "Dev container configuration",
     "generic_mcp": "Generic MCP configuration",
     "github_copilot_instructions": "GitHub Copilot instructions",
     "github_copilot_prompt": "GitHub Copilot prompt",
     "github_copilot_setup": "GitHub Copilot setup workflow",
+    "vscode_mcp": "VS Code MCP configuration",
     "policy": "LokiRed policy",
     "windsurf_mcp": "Windsurf MCP configuration",
 }
@@ -76,6 +78,10 @@ EVIDENCE_LABELS = {
     "snippet": "Snippet",
     "url": "URL",
     "value": "Value",
+    "event": "Event",
+    "hook_type": "Hook type",
+    "matcher": "Matcher",
+    "target": "Target",
 }
 
 
@@ -212,10 +218,12 @@ def build_scan_payload(
     suppressed_findings: list[ScanFinding] | None = None,
     invalid_suppressions: list[dict[str, Any]] | None = None,
     diff: dict[str, Any] | None = None,
+    coverage_warnings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build the machine-readable scan payload."""
     suppressed_findings = suppressed_findings or []
     invalid_suppressions = invalid_suppressions or []
+    coverage_warnings = coverage_warnings or []
     severity_counts = Counter(finding["severity"] for finding in findings)
     config_counts = Counter(finding["config_type"] for finding in findings)
     inventory_counts = Counter(target["config_type"] for target in targets or [])
@@ -240,6 +248,7 @@ def build_scan_payload(
             "baseline_graph_delta_summary": graph_summary,
         },
         "findings": findings,
+        "coverage_warnings": coverage_warnings,
     }
 
     if targets is not None:
@@ -272,6 +281,7 @@ def format_json_report(
     suppressed_findings: list[ScanFinding] | None = None,
     invalid_suppressions: list[dict[str, Any]] | None = None,
     diff: dict[str, Any] | None = None,
+    coverage_warnings: list[dict[str, Any]] | None = None,
 ) -> str:
     """Build a stable JSON report for CI and downstream tooling."""
     return json.dumps(
@@ -283,6 +293,7 @@ def format_json_report(
             suppressed_findings=suppressed_findings,
             invalid_suppressions=invalid_suppressions,
             diff=diff,
+            coverage_warnings=coverage_warnings,
         ),
         indent=2,
         sort_keys=True,
@@ -304,10 +315,12 @@ def format_markdown_review(
     root_path: str | None = None,
     blocked: bool = False,
     fail_on: str | None = None,
+    coverage_warnings: list[dict[str, Any]] | None = None,
 ) -> str:
     """Build a deterministic Markdown pull-request review summary."""
     suppressed_findings = suppressed_findings or []
     invalid_suppressions = invalid_suppressions or []
+    coverage_warnings = coverage_warnings or []
     diff = diff or {}
     graph_diff = diff.get("inventory_graph", {}) if isinstance(diff, dict) else {}
     deltas = list(graph_diff.get("deltas", [])) if isinstance(graph_diff, dict) else []
@@ -348,6 +361,7 @@ def format_markdown_review(
     lines.extend(_markdown_remediation(new_findings, policy_changed_findings))
     lines.extend(_markdown_policy_section(new_findings, policy_changed_findings, root_path))
     lines.extend(_markdown_suppression_section(suppressed_findings, invalid_suppressions, root_path))
+    lines.extend(_markdown_coverage_warnings(coverage_warnings))
     lines.extend(_markdown_resolved_section(resolved_findings))
 
     if status == "clean":
@@ -867,6 +881,19 @@ def _markdown_suppression_section(
             f"- {suppression.get('status', 'invalid').title()} suppression for "
             f"`{_md_text(str(suppression.get('rule_id', '')))}`: {_md_text(str(suppression.get('message', '')))}"
         )
+    lines.append("")
+    return lines
+
+
+def _markdown_coverage_warnings(warnings: list[dict[str, Any]]) -> list[str]:
+    if not warnings:
+        return []
+    lines = ["## Coverage notes", ""]
+    for warning in warnings:
+        message = str(warning.get("message", "")).strip()
+        scope = str(warning.get("scope", "unknown")).strip()
+        if message:
+            lines.append(f"- `{scope}`: {message}")
     lines.append("")
     return lines
 

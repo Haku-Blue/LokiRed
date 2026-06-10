@@ -9,6 +9,15 @@ import tomllib
 from pathlib import Path
 from typing import Any, Iterable, Iterator, TypedDict
 
+from config_adapters import (
+    MCP_CONFIG_TYPES,
+    hook_target,
+    hook_type,
+    iter_claude_hook_entries,
+    iter_mcp_server_entries,
+    mcp_secret_scan_roots,
+)
+
 
 DEFAULT_TARGET_FILENAMES = frozenset(
     {
@@ -20,6 +29,8 @@ DEFAULT_TARGET_FILENAMES = frozenset(
         "copilot-setup-steps.yml",
         "copilot-setup-steps.yaml",
         "copilot-instructions.md",
+        "devcontainer.json",
+        "mcp.json",
         "mcp-config.json",
         "mcp_config.json",
     }
@@ -151,6 +162,10 @@ def classify_config_file(file_path: Path) -> str | None:
         return "generic_mcp"
     if name == "mcp_config.json":
         return "windsurf_mcp"
+    if len(parts) >= 2 and parts[-2] == ".vscode" and name == "mcp.json":
+        return "vscode_mcp"
+    if ".devcontainer" in parts and name == "devcontainer.json":
+        return "devcontainer_config"
     if len(parts) >= 2 and parts[-2] == ".claude" and name in {
         "settings.json",
         "settings.local.json",
@@ -183,7 +198,7 @@ def classify_config_file(file_path: Path) -> str | None:
 
 def detect_config_issues(config_text: str, config_type: str) -> list[SecurityIssue]:
     """Dispatch deterministic rules for a classified config file."""
-    if config_type in {"claude_mcp", "cursor_mcp", "generic_mcp", "windsurf_mcp"}:
+    if config_type in MCP_CONFIG_TYPES:
         return detect_mcp_config_issues(config_text, config_type)
     if config_type == "claude_settings":
         return detect_claude_settings_issues(config_text)
@@ -218,33 +233,28 @@ def detect_mcp_config_issues(
         return []
 
     issues: list[SecurityIssue] = []
-    servers = parsed.get("mcpServers")
-    if isinstance(servers, dict):
-        for server_name, server in sorted(servers.items()):
-            if not isinstance(server, dict):
-                continue
-
-            server_path = ["mcpServers", str(server_name)]
-            issues.extend(
-                _detect_mcp_server_command_issues(
-                    config_text,
-                    config_type,
-                    server,
-                    server_path,
-                    str(server_name),
-                )
+    for entry in iter_mcp_server_entries(parsed, config_type):
+        issues.extend(
+            _detect_mcp_server_command_issues(
+                config_text,
+                config_type,
+                entry["server"],
+                entry["path"],
+                entry["name"],
             )
-            issues.extend(
-                _detect_mcp_server_approval_issues(
-                    config_text,
-                    config_type,
-                    server,
-                    server_path,
-                    str(server_name),
-                )
+        )
+        issues.extend(
+            _detect_mcp_server_approval_issues(
+                config_text,
+                config_type,
+                entry["server"],
+                entry["path"],
+                entry["name"],
             )
+        )
 
-    issues.extend(_detect_structured_secret_issues(config_text, config_type, parsed, []))
+    for scan_root, scan_path in mcp_secret_scan_roots(parsed, config_type):
+        issues.extend(_detect_structured_secret_issues(config_text, config_type, scan_root, scan_path))
     return _dedupe_issues(issues)
 
 
@@ -301,6 +311,9 @@ def detect_claude_settings_issues(config_text: str) -> list[SecurityIssue]:
             )
         )
 
+    for hook_entry in iter_claude_hook_entries(parsed):
+        issues.extend(_detect_claude_hook_issues(config_text, hook_entry))
+
     allow_rules = _nested_get(parsed, ["permissions", "allow"])
     if isinstance(allow_rules, list):
         for index, rule in enumerate(allow_rules):
@@ -342,6 +355,96 @@ def detect_claude_settings_issues(config_text: str) -> list[SecurityIssue]:
                 )
 
     return _dedupe_issues(issues)
+
+
+def _detect_claude_hook_issues(config_text: str, hook_entry: dict[str, Any]) -> list[SecurityIssue]:
+    issues: list[SecurityIssue] = []
+    hook = hook_entry["hook"]
+    kind = hook_type(hook)
+    target = hook_target(hook)
+    if kind not in {"command", "http", "prompt"} or not target:
+        return issues
+
+    path = [*hook_entry["path"], "url" if kind == "http" else "prompt" if kind == "prompt" else "command"]
+    evidence = {
+        "config_path": _path_to_string(path),
+        "event": str(hook_entry["event"]),
+        "hook_type": kind,
+    }
+    matcher = str(hook_entry.get("matcher", ""))
+    if matcher:
+        evidence["matcher"] = matcher
+
+    if kind == "command":
+        destructive_label = _destructive_command_label(target)
+        if destructive_label is not None:
+            issues.append(
+                _issue(
+                    config_type="claude_settings",
+                    severity="high",
+                    rule_id="DESTRUCTIVE_PERMISSION",
+                    title="Claude hook runs a destructive command",
+                    description="A Claude Code hook command includes a destructive operation that can run automatically during the configured lifecycle event.",
+                    line=_line_for_path(config_text, path, target),
+                    evidence={**evidence, "operation": destructive_label},
+                    remediation="Remove the destructive command from the hook or move it behind an explicit manual approval step.",
+                )
+            )
+        issues.append(
+            _issue(
+                config_type="claude_settings",
+                severity="medium",
+                rule_id="CLAUDE_HOOK_EXECUTION",
+                title="Claude hook executes a command",
+                description="Claude Code is configured to run a command hook automatically during an agent lifecycle event.",
+                line=_line_for_path(config_text, path, target),
+                evidence={**evidence, "target": _redact_evidence_text(target)},
+                remediation="Keep hook commands narrow, reviewable, and free of secrets or destructive operations.",
+            )
+        )
+        return issues
+
+    if kind == "http":
+        if target.startswith("http://") and not _is_local_url(target):
+            issues.append(
+                _issue(
+                    config_type="claude_settings",
+                    severity="medium",
+                    rule_id="INSECURE_REMOTE_MCP",
+                    title="Claude hook uses insecure HTTP",
+                    description="A Claude Code HTTP hook posts lifecycle data to a non-local endpoint over plain HTTP.",
+                    line=_line_for_path(config_text, path, target),
+                    evidence={**evidence, "url": target},
+                    remediation="Use HTTPS for remote hook endpoints or keep plain HTTP limited to localhost-only development endpoints.",
+                )
+            )
+        issues.append(
+            _issue(
+                config_type="claude_settings",
+                severity="medium",
+                rule_id="CLAUDE_HOOK_EXECUTION",
+                title="Claude hook calls an HTTP endpoint",
+                description="Claude Code is configured to send hook event data to an HTTP endpoint automatically.",
+                line=_line_for_path(config_text, path, target),
+                evidence={**evidence, "url": target},
+                remediation="Keep hook endpoints trusted, encrypted when remote, and scoped to the minimum event data needed.",
+            )
+        )
+        return issues
+
+    issues.append(
+        _issue(
+            config_type="claude_settings",
+            severity="medium",
+            rule_id="CLAUDE_HOOK_EXECUTION",
+            title="Claude hook uses an LLM prompt",
+            description="Claude Code is configured to run a prompt hook that can influence lifecycle decisions automatically.",
+            line=_line_for_path(config_text, path, target),
+            evidence={**evidence, "target": _redact_evidence_text(target)},
+            remediation="Keep prompt hooks specific, deterministic where possible, and reviewed like other agent control policy.",
+        )
+    )
+    return issues
 
 
 def detect_codex_config_issues(config_text: str) -> list[SecurityIssue]:
@@ -617,6 +720,8 @@ def _detect_structured_secret_issues(
     issues: list[SecurityIssue] = []
 
     for candidate_path, candidate_value in _iter_string_values(value, path):
+        if _is_secret_reference_path(candidate_path):
+            continue
         key = candidate_path[-1] if candidate_path else ""
         key_is_sensitive = SECRET_KEY_PATTERN.search(key) is not None
         value_is_sensitive = SECRET_VALUE_PATTERN.search(candidate_value) is not None
@@ -643,6 +748,10 @@ def _detect_structured_secret_issues(
         )
 
     return issues
+
+
+def _is_secret_reference_path(path: list[str]) -> bool:
+    return any(part in {"env_vars", "bearer_token_env_var", "env_http_headers"} for part in path)
 
 
 def _iter_string_values(value: Any, path: list[str]) -> Iterator[tuple[list[str], str]]:
@@ -799,12 +908,21 @@ def _looks_like_secret_reference(value: str) -> bool:
         or stripped.startswith("${")
         or stripped.startswith("$")
         or stripped.startswith("%")
+        or "${input:" in lowered
+        or "${env:" in lowered
+        or "${workspacefolder}" in lowered
         or "process.env" in lowered
         or "<your" in lowered
         or "<token" in lowered
         or "<secret" in lowered
         or lowered in {"changeme", "example", "mock", "placeholder", "replace-me"}
     )
+
+
+def _redact_evidence_text(value: str) -> str:
+    if SECRET_VALUE_PATTERN.search(value) or SECRET_ASSIGNMENT_PATTERN.search(value):
+        return "<redacted>"
+    return value if len(value) <= 200 else value[:197] + "..."
 
 
 def _is_local_url(url: str) -> bool:

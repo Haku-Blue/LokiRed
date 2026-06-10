@@ -602,6 +602,14 @@ def _case_danger_full_access() -> set[str]:
     return _issue_rule_ids(detect_codex_config_issues('approval_policy = "on-request"\nsandbox_mode = "workspace-write"\n'))
 
 
+def _case_claude_hook_execution() -> set[str]:
+    return _issue_rule_ids(
+        detect_claude_settings_issues(
+            json.dumps({"hooks": {"PreToolUse": [{"matcher": "Read", "hooks": [{"type": "notification"}]}]}})
+        )
+    )
+
+
 def _case_destructive_permission() -> set[str]:
     return _issue_rule_ids(
         detect_mcp_config_issues(
@@ -675,6 +683,7 @@ def _case_unsafe_approval_mode() -> set[str]:
 
 
 NEGATIVE_RULE_CASES = {
+    "CLAUDE_HOOK_EXECUTION": _case_claude_hook_execution,
     "DANGER_FULL_ACCESS": _case_danger_full_access,
     "DESTRUCTIVE_PERMISSION": _case_destructive_permission,
     "HARDCODED_SECRET": _case_hardcoded_secret,

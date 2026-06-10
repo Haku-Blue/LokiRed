@@ -4,6 +4,7 @@ This index mirrors the bundled rule catalog. The `rules list` and `rules show` C
 
 | Rule ID | Severity | Confidence | Recommended action | Summary |
 | ------- | -------- | ---------- | ------------------ | ------- |
+| CLAUDE_HOOK_EXECUTION | medium | high | warn | Surfaces Claude Code hooks that can run automatically during lifecycle events. |
 | DANGER_FULL_ACCESS | high | high | block | Detects Codex configuration that gives an agent unrestricted filesystem access. |
 | DESTRUCTIVE_PERMISSION | high | medium | block | Detects durable agent configuration or instructions that include destructive operations. |
 | HARDCODED_SECRET | high | medium | block | Detects credential-like literals in agent-visible configuration or instructions. |

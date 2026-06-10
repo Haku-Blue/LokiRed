@@ -28,14 +28,18 @@ LokiRed currently detects:
 - Destructive commands in agent instruction text.
 - MCP servers using insecure remote `http://` URLs.
 - MCP tools or servers configured for auto approval.
+- Claude Code command, HTTP, and prompt hooks that run during lifecycle events.
 - Claude Code settings that bypass permission prompts.
 - Claude Code settings that auto-enable all project MCP servers.
 - Overbroad Claude Code tool allow rules.
 - Codex configs with disabled approvals.
 - Codex configs with full filesystem access.
+- Codex filesystem and network permission-profile semantics in normalized inventory.
+- VS Code workspace and dev-container MCP servers.
+- Committed GitHub Copilot setup workflow commands as static inventory.
 - Invalid JSON or TOML in supported config files.
 
-LokiRed also produces an inventory of discovered agent configuration files when using JSON output. JSON output includes report schema version `1.1`, a versioned normalized inventory, permission classifications, stable finding fingerprints, policy and suppression metadata, and optional baseline diff state.
+LokiRed also produces an inventory of discovered agent configuration files when using JSON output. JSON output includes report schema version `1.1`, a versioned normalized inventory, permission classifications, stable finding fingerprints, policy and suppression metadata, coverage warnings, and optional baseline diff state.
 
 Rules include first-class confidence and recommended action metadata. Confidence communicates evidence strength (`high`, `medium`, `low`, or `unknown`). Recommended action communicates the rule library's default recommendation (`warn` or `block`) without changing the CLI `--fail-on` severity threshold behavior.
 
@@ -51,6 +55,8 @@ LokiRed discovers and scans these files today:
 | Codex | `.codex/config.toml` |
 | Cursor MCP | `.cursor/mcp.json` |
 | Cursor rules | `.cursorrules`, `.cursor/rules/*.md`, `.cursor/rules/*.mdc` |
+| VS Code workspace MCP | `.vscode/mcp.json` |
+| VS Code dev-container MCP | `.devcontainer/devcontainer.json` with `customizations.vscode.mcp.servers` |
 | Windsurf MCP | `mcp_config.json` |
 | GitHub Copilot instructions | `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md` |
 | GitHub Copilot prompts | `.github/prompts/*.prompt.md` |
@@ -58,6 +64,8 @@ LokiRed discovers and scans these files today:
 | General agent instructions | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` |
 
 LokiRed skips common generated or dependency folders such as `.git`, `node_modules`, `vendor`, `dist`, `build`, `.venv`, `venv`, `.pytest_cache`, and `__pycache__`.
+
+See [docs/coverage.md](docs/coverage.md) for the full coverage matrix and the blind spots LokiRed reports honestly in JSON and Markdown review output.
 
 ## Requirements
 
@@ -206,6 +214,7 @@ The JSON report includes:
 - Inventory of discovered config files.
 - Versioned normalized inventory records, including `clients`, `servers`, `capabilities`, and `evidence`.
 - Permission classifications.
+- Coverage warnings for user-profile, SaaS-managed, and local-only surfaces outside the explicit scan root.
 - Stable finding fingerprints.
 - Finding confidence, recommended action, policy decision when applicable, and baseline state when applicable.
 - Suppressed findings and suppression review metadata when policy suppressions are used.
@@ -242,6 +251,7 @@ Example shape:
       "bindings": []
     }
   },
+  "coverage_warnings": [],
   "classifications": [],
   "findings": []
 }

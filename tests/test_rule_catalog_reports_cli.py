@@ -106,6 +106,23 @@ def _policy_allow_secret(root: Path) -> None:
 
 
 RULE_COVERAGE: dict[str, tuple[Setup, Setup]] = {
+    "CLAUDE_HOOK_EXECUTION": (
+        _claude_settings(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [
+                                {"type": "command", "command": "python .claude/hooks/check.py"}
+                            ],
+                        }
+                    ]
+                }
+            }
+        ),
+        _claude_settings({"hooks": {"PreToolUse": [{"matcher": "Read", "hooks": [{"type": "notification"}]}]}}),
+    ),
     "DANGER_FULL_ACCESS": (
         _codex_config('sandbox_mode = "danger-full-access"\n'),
         _codex_config('sandbox_mode = "workspace-write"\n'),

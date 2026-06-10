@@ -34,6 +34,34 @@ class RuleMetadata(TypedDict):
 
 
 RULE_CATALOG: dict[str, RuleMetadata] = {
+    "CLAUDE_HOOK_EXECUTION": {
+        "id": "CLAUDE_HOOK_EXECUTION",
+        "title": "Claude hook executes automatically",
+        "short_name": "Claude hook execution",
+        "purpose": "Surface Claude Code hooks that can run commands, call HTTP endpoints, or evaluate prompts during agent lifecycle events.",
+        "description": (
+            "Claude Code settings include a hook handler that can run automatically during "
+            "a configured lifecycle event."
+        ),
+        "severity": "medium",
+        "confidence": "high",
+        "recommended_action": "warn",
+        "documentation_path": "docs/rules/CLAUDE_HOOK_EXECUTION.md",
+        "risk": (
+            "Automatic hooks can run local commands, contact endpoints, or influence agent "
+            "decisions outside the immediate prompt flow."
+        ),
+        "ecosystems": ["claude_settings"],
+        "remediation": (
+            "Keep hook handlers narrow, deterministic where possible, reviewed, and free "
+            "of secrets or destructive operations."
+        ),
+        "suppression_guidance": (
+            "Suppress only for reviewed hooks with clear ownership and a bounded lifecycle "
+            "event scope."
+        ),
+        "help_uri": "docs/rules/CLAUDE_HOOK_EXECUTION.md",
+    },
     "DANGER_FULL_ACCESS": {
         "id": "DANGER_FULL_ACCESS",
         "title": "Codex sandbox allows full system access",
@@ -86,10 +114,12 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
             "codex_config",
             "cursor_mcp",
             "cursor_rules",
+            "devcontainer_config",
             "github_copilot_instructions",
             "github_copilot_prompt",
             "github_copilot_setup",
             "generic_mcp",
+            "vscode_mcp",
             "windsurf_mcp",
         ],
         "remediation": (
@@ -126,10 +156,12 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
             "codex_config",
             "cursor_mcp",
             "cursor_rules",
+            "devcontainer_config",
             "github_copilot_instructions",
             "github_copilot_prompt",
             "github_copilot_setup",
             "generic_mcp",
+            "vscode_mcp",
             "windsurf_mcp",
         ],
         "remediation": (
@@ -159,7 +191,16 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
             "Plain HTTP remote MCP traffic can be intercepted or modified between the agent "
             "client and the configured server."
         ),
-        "ecosystems": ["claude_mcp", "codex_config", "cursor_mcp", "generic_mcp", "windsurf_mcp"],
+        "ecosystems": [
+            "claude_mcp",
+            "claude_settings",
+            "codex_config",
+            "cursor_mcp",
+            "devcontainer_config",
+            "generic_mcp",
+            "vscode_mcp",
+            "windsurf_mcp",
+        ],
         "remediation": "Use HTTPS for remote MCP servers or keep plain HTTP limited to localhost.",
         "suppression_guidance": (
             "Suppress only for temporary internal endpoints with compensating network controls."
@@ -180,7 +221,15 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
             "Malformed JSON can prevent agent or MCP controls from loading, leaving teams with "
             "a misleading view of configured access."
         ),
-        "ecosystems": ["claude_mcp", "claude_settings", "cursor_mcp", "generic_mcp", "windsurf_mcp"],
+        "ecosystems": [
+            "claude_mcp",
+            "claude_settings",
+            "cursor_mcp",
+            "devcontainer_config",
+            "generic_mcp",
+            "vscode_mcp",
+            "windsurf_mcp",
+        ],
         "remediation": "Fix the JSON syntax and rerun LokiRed so the file can be evaluated structurally.",
         "suppression_guidance": "Do not suppress unless the file is intentionally inert test data.",
         "help_uri": "docs/rules/INVALID_CONFIG_JSON.md",
@@ -221,7 +270,15 @@ RULE_CATALOG: dict[str, RuleMetadata] = {
             "Auto-approved MCP tools reduce human review before tool calls and may allow "
             "writes or external-system actions to proceed too quietly."
         ),
-        "ecosystems": ["claude_mcp", "codex_config", "cursor_mcp", "generic_mcp", "windsurf_mcp"],
+        "ecosystems": [
+            "claude_mcp",
+            "codex_config",
+            "cursor_mcp",
+            "devcontainer_config",
+            "generic_mcp",
+            "vscode_mcp",
+            "windsurf_mcp",
+        ],
         "remediation": "Set MCP approval mode to prompt and scope auto-approved tools to low-risk read-only operations.",
         "suppression_guidance": (
             "Suppress only for narrow, read-only tools and include an owner who reviews the approval scope."

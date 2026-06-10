@@ -427,6 +427,8 @@ def _material_graph_record(record: dict[str, Any]) -> dict[str, Any]:
     material = dict(record)
     material.pop("id", None)
     material.pop("evidence_ids", None)
+    material.pop("normalized_category", None)
+    material.pop("normalized_access_level", None)
     return material
 
 
@@ -437,8 +439,8 @@ def _capability_change_type(before: dict[str, Any], after: dict[str, Any]) -> st
     if target_relation is not None:
         return target_relation
 
-    old_access = str(before.get("access_level", before.get("operation", "")))
-    new_access = str(after.get("access_level", after.get("operation", "")))
+    old_access = str(before.get("normalized_access_level", before.get("access_level", before.get("operation", ""))))
+    new_access = str(after.get("normalized_access_level", after.get("access_level", after.get("operation", ""))))
     access_relation = _access_breadth_relation(old_access, new_access)
     if access_relation is not None:
         return access_relation

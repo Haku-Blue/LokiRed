@@ -10,6 +10,7 @@ from typing import Any, TypedDict
 
 from baseline import BaselineError, apply_baseline_diff, build_baseline, load_baseline, write_baseline
 from classification import classify_permissions
+from config_adapters import build_visibility_warnings
 from fingerprints import ensure_fingerprints
 from git_snapshots import GitSnapshotError, materialize_git_ref_pair
 from inventory import build_normalized_inventory, inventory_graph_snapshot
@@ -46,6 +47,7 @@ class ScanExecution(TypedDict):
     active_findings: list[ScanFinding]
     suppressed_findings: list[ScanFinding]
     invalid_suppressions: list[dict[str, Any]]
+    coverage_warnings: list[dict[str, Any]]
     diff: dict[str, Any] | None
 
 
@@ -113,6 +115,7 @@ def execute_scan(
     raw_findings = scan_targets(targets)
     inventory = build_normalized_inventory(targets, root)
     classifications = classify_permissions(inventory)
+    coverage_warnings = build_visibility_warnings(root, targets)
     policy = load_policy(root, policy_path)
     policy_result = apply_policy(raw_findings, classifications, policy, root)
 
@@ -145,6 +148,7 @@ def execute_scan(
         "active_findings": active_findings,
         "suppressed_findings": policy_result["suppressed_findings"],  # type: ignore[typeddict-item]
         "invalid_suppressions": policy_result["invalid_suppressions"],
+        "coverage_warnings": coverage_warnings,
         "diff": diff,
     }
 
@@ -178,6 +182,7 @@ def run_scan(
                 suppressed_findings=result["suppressed_findings"],
                 invalid_suppressions=result["invalid_suppressions"],
                 diff=result["diff"],
+                coverage_warnings=result["coverage_warnings"],
             )
         )
     elif output_format == "sarif":
@@ -666,6 +671,7 @@ def _print_ref_comparison(
                 root_path=head_root,
                 blocked=blocked,
                 fail_on=fail_on,
+                coverage_warnings=head_result["coverage_warnings"],
             )
         )
         return
@@ -697,6 +703,7 @@ def _format_ref_comparison_json(
         suppressed_findings=public_head["suppressed_findings"],
         invalid_suppressions=public_head["invalid_suppressions"],
         diff=public_head["diff"],
+        coverage_warnings=public_head["coverage_warnings"],
     )
     payload["comparison"] = {
         "command": command,
@@ -725,6 +732,7 @@ def _public_scan_execution(result: ScanExecution, root_path: str) -> ScanExecuti
         "active_findings": _scrub_paths(result["active_findings"], root_path),
         "suppressed_findings": _scrub_paths(result["suppressed_findings"], root_path),
         "invalid_suppressions": _scrub_paths(result["invalid_suppressions"], root_path),
+        "coverage_warnings": _scrub_paths(result["coverage_warnings"], root_path),
         "diff": _scrub_paths(result["diff"], root_path),
     }  # type: ignore[return-value]
 
