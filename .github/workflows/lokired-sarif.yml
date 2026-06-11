@@ -7,7 +7,7 @@ on:
       - main
 
 jobs:
-  scan:
+  lokired-sarif:
     runs-on: ubuntu-latest
     env:
       LOKIRED_UPLOAD_CODE_SCANNING: ${{ vars.LOKIRED_UPLOAD_CODE_SCANNING }}
