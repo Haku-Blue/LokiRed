@@ -1,0 +1,83 @@
+schema_version: 1
+
+access:
+  allow:
+    - resource: workspace
+      reason: Workspace-scoped repository access is allowed for reviewed agent tooling.
+
+  block:
+    - category: filesystem
+      resource: filesystem:/
+      severity: high
+      reason: Root filesystem access can expose files outside the repository workspace.
+      remediation: Limit the MCP server or agent sandbox to the repository workspace.
+    - category: filesystem
+      access: full_access
+      severity: high
+      reason: Full filesystem access removes the workspace boundary.
+      remediation: Use workspace-write or a narrower explicit filesystem scope.
+    - category: approval_boundary
+      access: bypass
+      severity: critical
+      reason: Explicitly disabled approvals remove human checkpoints for risky tool use.
+      remediation: Restore an approval policy that prompts before risky or sensitive tool use.
+    - category: secret
+      access: read_secret_literal
+      severity: high
+      reason: Literal credentials are not allowed in agent-visible configuration.
+      remediation: Replace literals with secret-manager or environment references.
+    - category: credential_exposure
+      access: read_secret_literal
+      severity: high
+      reason: Credential-like instruction text can leak secrets to agent context.
+      remediation: Remove the credential-like text and rotate the exposed value if it was real.
+
+  require-review:
+    - category: command_execution
+      access: execute
+      severity: medium
+      reason: Shell-capable agent configuration needs owner review unless clearly benign.
+      remediation: Keep the command pinned, minimal, and documented, or remove it.
+    - category: environment
+      access: read
+      severity: low
+      reason: Environment values passed to MCP servers need ownership context.
+      remediation: Use named secret references and document why the server needs them.
+    - category: tool_access
+      access: broad_allow
+      severity: high
+      reason: Broad tool allow rules need reviewer confirmation before merge.
+      remediation: Replace broad allow patterns with specific tool and operation scopes.
+    - category: mcp_tool_approval
+      access: auto_approve
+      severity: medium
+      reason: Reduced per-use approval can be acceptable only for reviewed low-risk tools.
+      remediation: Restore prompt-based approval or document the low-risk exception.
+    - category: mcp_server_discovery
+      access: auto_enable
+      severity: medium
+      reason: Automatically enabling all project MCP servers changes agent reach.
+      remediation: Enable only the project servers that are needed.
+
+rules:
+  HARDCODED_SECRET:
+    severity: high
+  UNSAFE_APPROVAL_MODE:
+    severity: critical
+  DANGER_FULL_ACCESS:
+    severity: high
+  DESTRUCTIVE_PERMISSION:
+    severity: high
+  INSECURE_REMOTE_MCP:
+    severity: high
+  OVERBROAD_TOOL_ALLOW:
+    severity: high
+
+suppressions:
+  - rule_id: HARDCODED_SECRET
+    path: docs/examples/synthetic-agent/mcp-config.json
+    config_path: mcpServers.demo.env.DEMO_TOKEN
+    reason: Synthetic example token used only in documentation fixtures.
+    owner: appsec@example.com
+    expires: 2027-01-31
+    ticket: SEC-EXAMPLE-1

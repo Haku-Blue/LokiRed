@@ -2,7 +2,7 @@
 
 LokiRed is local-first. A scan reads files from the repository or workspace you point it at, applies deterministic rules, evaluates optional local policy and baseline files, and renders text, JSON, or SARIF. It does not require a remote service or telemetry.
 
-See the [coverage matrix](coverage.md), [threat model](threat-model.md), and [privacy model](privacy-model.md) for explicit scanner, security, and data-handling boundaries.
+See the [coverage matrix](coverage.md), [policy templates](policy-templates.md), [branch-protection rollout](branch-protection-rollout.md), [threat model](threat-model.md), and [privacy model](privacy-model.md) for explicit scanner, security, and data-handling boundaries.
 
 ## Scan Flow
 
@@ -306,7 +306,7 @@ steps:
       append-step-summary: "true"
 ```
 
-For a gradual rollout, start with `mode: diff` or policy rules that use `warn`, review summaries for noise, tune policy and exceptions, then enable blocking only for new high-confidence high or critical permission expansions. Copy-paste examples live in `docs/examples/lokired-pr-policy.yml` and `docs/examples/lokired-pr-warn-only.yml`.
+For a gradual rollout, start with `mode: diff` or policy rules that use `warn`, review summaries for noise, tune policy and exceptions, then enable blocking only for new high-confidence high or critical permission expansions. Copy-paste workflow examples live in `docs/examples/lokired-pr-policy.yml` and `docs/examples/lokired-pr-warn-only.yml`. Copy-paste policy templates live in [policy-templates.md](policy-templates.md), and branch-protection sequencing lives in [branch-protection-rollout.md](branch-protection-rollout.md).
 
 The core Action needs only `contents: read` on the checked-out repository. It does not post PR comments, require a GitHub App, require cloud credentials, upload raw config, or upload secret values. SARIF upload remains optional and separate; see `.github/workflows/lokired-sarif.yml`.
 
