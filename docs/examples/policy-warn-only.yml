@@ -1,0 +1,36 @@
+schema_version: 1
+
+access:
+  allow:
+    - resource: workspace
+      reason: Workspace-scoped access is expected during the first inventory pass.
+
+  warn:
+    - category: filesystem
+      reason: Review filesystem reach before moving to enforcement.
+    - category: network
+      reason: Remote MCP endpoints should be understood during rollout.
+    - category: secret
+      reason: Secret-like values in agent-visible configuration need migration.
+    - category: credential_exposure
+      reason: Credential-like instruction text should be reviewed.
+    - category: approval_boundary
+      reason: Approval-boundary changes need visibility during tuning.
+    - category: command_execution
+      reason: Agent-accessible commands need owner review before enforcement.
+    - category: mcp_tool_approval
+      reason: Tool auto-approval should be visible before blocking.
+    - category: mcp_server_discovery
+      reason: Automatic project-server discovery should be tuned with developers.
+    - category: tool_access
+      reason: Broad allow rules should be reviewed before they block builds.
+
+rules:
+  HARDCODED_SECRET:
+    severity: high
+  INSECURE_REMOTE_MCP:
+    severity: medium
+  DESTRUCTIVE_PERMISSION:
+    severity: high
+  UNSAFE_APPROVAL_MODE:
+    severity: critical

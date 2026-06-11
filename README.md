@@ -65,7 +65,7 @@ LokiRed discovers and scans these files today:
 
 LokiRed skips common generated or dependency folders such as `.git`, `node_modules`, `vendor`, `dist`, `build`, `.venv`, `venv`, `.pytest_cache`, and `__pycache__`.
 
-See [docs/coverage.md](docs/coverage.md) for the full coverage matrix and the blind spots LokiRed reports honestly in JSON and Markdown review output.
+See [docs/coverage.md](docs/coverage.md) for the full coverage matrix and the blind spots LokiRed reports honestly in JSON and Markdown review output. See [docs/policy-templates.md](docs/policy-templates.md) for copyable policy templates.
 
 ## Requirements
 
@@ -443,7 +443,7 @@ Example Markdown summary excerpt:
 | Block | Expanded | VS Code MCP | filesystem write | workspace | / |
 ```
 
-For gradual rollout, start with `mode: diff` or policy rules that use `warn`, review the summaries for noise, tune policy and accountable exceptions, then switch branch protection to require the blocking `policy-check` job only for new high-confidence permission expansions. Copy-paste examples live in `docs/examples/lokired-pr-policy.yml` and `docs/examples/lokired-pr-warn-only.yml`.
+For gradual rollout, start with `mode: diff` or policy rules that use `warn`, review the summaries for noise, tune policy and accountable exceptions, then switch branch protection to require the blocking `policy-check` job only for new high-confidence permission expansions. Copy-paste workflow examples live in `docs/examples/lokired-pr-policy.yml` and `docs/examples/lokired-pr-warn-only.yml`; copy-paste policy templates live in [docs/policy-templates.md](docs/policy-templates.md). See [docs/branch-protection-rollout.md](docs/branch-protection-rollout.md) for the branch-protection sequence.
 
 To upload SARIF into GitHub code scanning, enable code scanning for the repository first. The checked-in SARIF workflow skips the upload step by default so repositories without code scanning enabled still pass CI. After enabling code scanning, set the repository variable `LOKIRED_UPLOAD_CODE_SCANNING` to `true`.
 
@@ -677,7 +677,7 @@ Near-term direction after v0.1.0:
 
 - Keep improving pull-request review artifacts around baseline inventory and graph deltas.
 - Expand high-signal coverage for repo-visible agent and MCP configuration surfaces.
-- Make GitHub Action onboarding and branch-protection rollout easier for warn-only and enforced modes.
+- Keep GitHub Action onboarding, policy templates, and branch-protection rollout guidance clear for warn-only and enforced modes.
 - Keep policy, suppressions, and rule documentation practical for AppSec, platform, DevEx, and developer reviewers.
 
 Longer-term direction:

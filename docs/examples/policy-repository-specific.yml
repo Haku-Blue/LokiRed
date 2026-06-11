@@ -1,0 +1,58 @@
+schema_version: 1
+
+access:
+  allow:
+    - path: .vscode/mcp.json
+      ecosystem: vscode_mcp
+      category: filesystem
+      resource: workspace
+      reason: This repository allows workspace-only VS Code MCP access.
+
+  warn:
+    - path: .github/workflows/copilot-setup-steps.y*ml
+      ecosystem: github_copilot_setup
+      category: command_execution
+      reason: Copilot setup commands are expected but should stay visible in reviews.
+    - path: docs/**
+      category: network
+      reason: Documentation examples may show remote endpoints during migration.
+
+  require-review:
+    - path: .claude/settings.json
+      ecosystem: claude_settings
+      resource: tool_access:broad_allow
+      severity: high
+      reason: Broad Claude tool allow rules need repository-owner review.
+    - path: services/payments/**
+      category: environment
+      access: read
+      severity: medium
+      reason: Payment service agent environment access needs service-owner review.
+
+  block:
+    - path: services/payments/**
+      category: secret
+      access: read_secret_literal
+      severity: critical
+      reason: Payment service agent config must not contain literal credentials.
+    - ecosystem: codex_config
+      resource: filesystem:/
+      severity: high
+      reason: Codex must not be granted root filesystem access in this repository.
+
+rules:
+  INSECURE_REMOTE_MCP:
+    severity: high
+  MCP_AUTO_APPROVAL:
+    severity: medium
+  OVERBROAD_TOOL_ALLOW:
+    severity: high
+
+suppressions:
+  - rule_id: INSECURE_REMOTE_MCP
+    path: docs/examples/local-only/mcp-config.json
+    config_path: mcpServers.local-dev.url
+    reason: Local documentation fixture intentionally shows a non-production HTTP endpoint.
+    owner: docs-maintainers@example.com
+    expires: 2027-01-31
+    ticket: DOCS-123
