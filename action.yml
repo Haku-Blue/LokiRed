@@ -1,29 +1,41 @@
-name: LokiRed Scan
-description: Scan AI-agent and MCP configuration risk with the local LokiRed CLI.
+name: LokiRed
+description: Scan AI-agent and MCP configuration risk, diff pull-request permission changes, or enforce policy.
 author: LokiRed
 branding:
   icon: shield
   color: red
 
 inputs:
+  mode:
+    description: "Action mode: scan, diff, or policy-check. scan preserves the original scan-only behavior."
+    required: false
+    default: "scan"
   scan-path:
-    description: Directory to scan.
+    description: Directory or Git repository to scan. Used as --repo for diff and policy-check modes.
     required: false
     default: "."
+  base-ref:
+    description: Base Git ref for diff and policy-check modes. Defaults to origin/${GITHUB_BASE_REF} on pull_request events.
+    required: false
+    default: ""
+  head-ref:
+    description: Head Git ref for diff and policy-check modes.
+    required: false
+    default: "HEAD"
   policy-path:
-    description: Optional path to a LokiRed policy file, such as .lokired/policy.yml.
+    description: Optional path to a LokiRed policy file for scan mode, such as .lokired/policy.yml.
     required: false
     default: ""
   baseline-path:
-    description: Optional path to a LokiRed baseline JSON file.
+    description: Optional path to a LokiRed baseline JSON file for scan mode.
     required: false
     default: ""
   output-format:
-    description: Output format passed to lokired scan.
+    description: Output format for the primary CLI output. scan supports text, json, or sarif; diff and policy-check support text, json, or markdown.
     required: false
     default: "text"
   output-file:
-    description: Optional file path where scan output should be written.
+    description: Optional file path where the primary scan-mode output should be written.
     required: false
     default: ""
   fail-on:
@@ -34,32 +46,58 @@ inputs:
     description: Optional path where LokiRed should write a baseline JSON file.
     required: false
     default: ""
+  markdown-summary-path:
+    description: Optional path for the Markdown pull-request summary produced by diff and policy-check modes.
+    required: false
+    default: "lokired-summary.md"
+  json-report-path:
+    description: Optional path for a JSON report artifact.
+    required: false
+    default: ""
+  append-step-summary:
+    description: Whether diff and policy-check modes append the Markdown summary to GITHUB_STEP_SUMMARY.
+    required: false
+    default: "true"
+
+outputs:
+  exit-code:
+    description: Original LokiRed CLI exit code returned by the selected mode.
+    value: ${{ steps.lokired.outputs.exit-code }}
+  mode:
+    description: Action mode that was executed.
+    value: ${{ steps.lokired.outputs.mode }}
+  markdown-summary-path:
+    description: Markdown summary path written by diff or policy-check mode.
+    value: ${{ steps.lokired.outputs.markdown-summary-path }}
+  json-report-path:
+    description: JSON report path written when json-report-path is set.
+    value: ${{ steps.lokired.outputs.json-report-path }}
+  blocked:
+    description: "true when policy-check mode returned exit code 1."
+    value: ${{ steps.lokired.outputs.blocked }}
 
 runs:
   using: composite
   steps:
     - name: Install LokiRed from checkout
       shell: bash
-      run: python -m pip install .
+      run: python -m pip install "$GITHUB_ACTION_PATH"
 
-    - name: Run LokiRed scan
+    - name: Run LokiRed
+      id: lokired
       shell: bash
-      run: |
-        set -euo pipefail
-        args=(scan "${{ inputs.scan-path }}" --format "${{ inputs.output-format }}" --fail-on "${{ inputs.fail-on }}")
-
-        if [ -n "${{ inputs.policy-path }}" ]; then
-          args+=(--policy "${{ inputs.policy-path }}")
-        fi
-        if [ -n "${{ inputs.baseline-path }}" ]; then
-          args+=(--baseline "${{ inputs.baseline-path }}")
-        fi
-        if [ -n "${{ inputs.write-baseline }}" ]; then
-          args+=(--write-baseline "${{ inputs.write-baseline }}")
-        fi
-
-        if [ -n "${{ inputs.output-file }}" ]; then
-          lokired "${args[@]}" > "${{ inputs.output-file }}"
-        else
-          lokired "${args[@]}"
-        fi
+      run: python "$GITHUB_ACTION_PATH/scripts/lokired_action.py"
+      env:
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_SCAN_PATH: ${{ inputs.scan-path }}
+        INPUT_BASE_REF: ${{ inputs.base-ref }}
+        INPUT_HEAD_REF: ${{ inputs.head-ref }}
+        INPUT_POLICY_PATH: ${{ inputs.policy-path }}
+        INPUT_BASELINE_PATH: ${{ inputs.baseline-path }}
+        INPUT_OUTPUT_FORMAT: ${{ inputs.output-format }}
+        INPUT_OUTPUT_FILE: ${{ inputs.output-file }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_WRITE_BASELINE: ${{ inputs.write-baseline }}
+        INPUT_MARKDOWN_SUMMARY_PATH: ${{ inputs.markdown-summary-path }}
+        INPUT_JSON_REPORT_PATH: ${{ inputs.json-report-path }}
+        INPUT_APPEND_STEP_SUMMARY: ${{ inputs.append-step-summary }}

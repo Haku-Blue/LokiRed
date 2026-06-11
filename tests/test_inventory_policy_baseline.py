@@ -341,7 +341,9 @@ class InventoryPolicyBaselineTest(unittest.TestCase):
         self.assertIn("policy-path:", action_text)
         self.assertIn("baseline-path:", action_text)
         self.assertIn("output-format:", action_text)
-        self.assertIn("lokired \"${args[@]}\"", action_text)
+        self.assertIn("mode:", action_text)
+        self.assertIn("markdown-summary-path:", action_text)
+        self.assertIn("scripts/lokired_action.py", action_text)
         self.assertTrue((PROJECT_ROOT / ".github" / "workflows" / "lokired.yml").is_file())
         self.assertTrue((PROJECT_ROOT / ".github" / "workflows" / "lokired-sarif.yml").is_file())
 
