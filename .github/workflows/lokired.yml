@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  scan:
+  lokired-scan:
     runs-on: ubuntu-latest
 
     steps:
