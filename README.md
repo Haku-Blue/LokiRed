@@ -365,51 +365,85 @@ Exit codes:
 - `1`: One or more findings at or above the configured threshold.
 - `2`: Scan setup failed, such as malformed policy, malformed baseline, or an invalid scan path.
 
-### Example GitHub Actions Workflow
+### GitHub Action
 
-This repository includes `action.yml`, a thin composite action that invokes the CLI. In another repository, pin LokiRed to a release tag. Inside this repository, `uses: ./` runs the local checkout.
+This repository includes `action.yml`, a composite action that installs LokiRed from the action checkout and invokes the CLI. In another repository, pin LokiRed to a release tag. Inside this repository, `uses: ./` runs the local checkout.
 
-Using the bundled action from a checkout:
+The default `mode: scan` preserves the original scan-only behavior:
 
 ```yaml
 - name: Scan agent and MCP config
-  uses: ./
+  uses: HakuBlue/LokiRed@v0.1.0
   with:
     scan-path: "."
     output-format: "text"
     fail-on: "high"
 ```
 
-Create `.github/workflows/lokired.yml`:
+For pull requests, use `mode: policy-check` to compare the base and head refs, write a Markdown permission-diff summary before any failure is returned, and optionally save JSON for later inspection:
 
 ```yaml
-name: LokiRed
+name: LokiRed PR policy
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
+
+permissions:
+  contents: read
 
 jobs:
-  scan:
+  lokired:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out repository
+      - name: Check out pull request head
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
-      - name: Install LokiRed
-        run: python -m pip install -e .
-
-      - name: Scan agent and MCP config
-        run: lokired scan . --format text --fail-on high
+      - name: Check AI-agent permission changes
+        uses: HakuBlue/LokiRed@v0.1.0
+        with:
+          mode: policy-check
+          scan-path: "."
+          base-ref: ${{ github.event.pull_request.base.sha }}
+          head-ref: ${{ github.event.pull_request.head.sha }}
+          output-format: "text"
+          fail-on: "high"
+          markdown-summary-path: "lokired-pr-summary.md"
+          json-report-path: "lokired-pr-report.json"
+          append-step-summary: "true"
 ```
+
+`actions/checkout` should use `fetch-depth: 0` for ref comparisons. If `base-ref` is omitted on a pull request, the Action uses `origin/${GITHUB_BASE_REF}`; when that ref is not present or the run is not a pull request, configure `base-ref` explicitly. LokiRed does not post PR comments, request write permissions, upload raw config, or require a GitHub App for this workflow.
+
+Action modes:
+
+- `scan`: Runs `lokired scan`. Supports `policy-path`, `baseline-path`, `write-baseline`, `output-file`, and existing scan thresholds.
+- `diff`: Runs `lokired diff` and exits successfully unless setup fails. Use this for warn-only rollout.
+- `policy-check`: Runs `lokired policy check`, publishes the Markdown summary, and then returns the original enforcing exit code.
+
+Useful Action outputs are `exit-code`, `mode`, `markdown-summary-path`, `json-report-path`, and `blocked`.
+
+Example Markdown summary excerpt:
+
+```markdown
+# LokiRed: blocked
+
+## Permission changes
+
+| Decision | Change | Client | Capability | Previous scope | Proposed scope |
+| --- | --- | --- | --- | --- | --- |
+| Block | Expanded | VS Code MCP | filesystem write | workspace | / |
+```
+
+For gradual rollout, start with `mode: diff` or policy rules that use `warn`, review the summaries for noise, tune policy and accountable exceptions, then switch branch protection to require the blocking `policy-check` job only for new high-confidence permission expansions. Copy-paste examples live in `docs/examples/lokired-pr-policy.yml` and `docs/examples/lokired-pr-warn-only.yml`.
 
 To upload SARIF into GitHub code scanning, enable code scanning for the repository first. The checked-in SARIF workflow skips the upload step by default so repositories without code scanning enabled still pass CI. After enabling code scanning, set the repository variable `LOKIRED_UPLOAD_CODE_SCANNING` to `true`.
 
@@ -622,6 +656,7 @@ fingerprints.py                    Stable finding fingerprints
 rule_catalog.py                    Stable rule metadata
 reporter.py                        Text, JSON, and SARIF output
 action.yml                         Thin GitHub Action wrapper around the CLI
+scripts/lokired_action.py          Testable GitHub Action orchestration
 docs/                              Workflow and rule documentation
 run_scanner.py                     Compatibility wrapper
 tests/                             Unit and pipeline tests

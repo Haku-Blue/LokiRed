@@ -21,7 +21,7 @@ The current CLI scans supported files below the path you provide. It does not au
 
 JSON and Markdown review output include coverage warnings for relevant blind spots, such as VS Code user-profile MCP settings, user-level Copilot CLI MCP configuration, GitHub SaaS-managed repository MCP settings, and other local-only client settings outside the explicit scan root. These warnings are report metadata, not blocking findings.
 
-For pull requests today, use `lokired scan` with policy, baselines, JSON, SARIF, and CI thresholds, or `lokired diff` / `lokired policy check` when you need an explicit Git-ref comparison. LokiRed does not yet ship a hosted pull-request review app.
+For pull requests today, use the GitHub Action, or run `lokired diff` / `lokired policy check` directly when you need an explicit Git-ref comparison. LokiRed does not yet ship a hosted pull-request review app.
 
 ## Normalized Inventory
 
@@ -232,35 +232,83 @@ Severity mapping:
 
 ## GitHub Action
 
-The repository includes `action.yml`, a thin composite action that installs LokiRed from the checkout and invokes the CLI.
+The repository includes `action.yml`, a composite action that installs LokiRed from the action checkout and invokes the CLI. Inside this repository, `uses: ./` runs the checked-out action. In other repositories, pin LokiRed to a release tag or a reviewed commit instead of relying on an unpinned branch.
 
-Inside this repository, `uses: ./` runs the checked-out action. In other repositories, pin LokiRed to a release tag or a reviewed commit instead of relying on an unpinned branch.
+Modes:
+
+- `scan`: Default mode. Runs `lokired scan` and preserves the original scan-only workflow.
+- `diff`: Runs `lokired diff` and produces a pull-request permission summary without blocking. This is the recommended warn-only rollout mode.
+- `policy-check`: Runs `lokired policy check`, writes the Markdown summary, appends it to `$GITHUB_STEP_SUMMARY` when enabled, and then returns the original enforcing exit code.
 
 Inputs:
 
-- `scan-path`: Directory to scan. Defaults to `.`.
-- `policy-path`: Optional explicit policy file.
-- `baseline-path`: Optional baseline JSON file.
-- `output-format`: `text`, `json`, or `sarif`. Defaults to `text`.
-- `output-file`: Optional file path for scan output.
+- `mode`: `scan`, `diff`, or `policy-check`. Defaults to `scan`.
+- `scan-path`: Directory or Git repository to scan. Defaults to `.`.
+- `base-ref`: Base Git ref for `diff` and `policy-check`. On pull request events, omitted `base-ref` falls back to `origin/${GITHUB_BASE_REF}`.
+- `head-ref`: Head Git ref for `diff` and `policy-check`. Defaults to `HEAD`.
+- `policy-path`: Optional explicit policy file for `scan` mode.
+- `baseline-path`: Optional baseline JSON file for `scan` mode.
+- `output-format`: `text`, `json`, or `sarif` in `scan` mode; `text`, `json`, or `markdown` in PR modes.
+- `output-file`: Optional file path for the primary scan-mode output.
 - `fail-on`: Lowest severity that fails the action. Defaults to `high`.
-- `write-baseline`: Optional path for writing a baseline JSON file.
+- `write-baseline`: Optional path for writing a baseline JSON file in `scan` mode.
+- `markdown-summary-path`: Path for the Markdown PR summary in `diff` or `policy-check` mode.
+- `json-report-path`: Optional path for a JSON report artifact.
+- `append-step-summary`: Whether PR modes append Markdown to `$GITHUB_STEP_SUMMARY`. Defaults to `true`.
 
-Minimal workflow:
+Outputs:
+
+- `exit-code`: Original LokiRed CLI exit code.
+- `mode`: Action mode that ran.
+- `markdown-summary-path`: Markdown summary path when configured.
+- `json-report-path`: JSON report path when configured.
+- `blocked`: `true` when `policy-check` returns exit code `1`.
+
+Scan-only workflow:
 
 ```yaml
 - uses: actions/checkout@v6
 - uses: actions/setup-python@v6
   with:
     python-version: "3.12"
-- uses: ./
+- uses: HakuBlue/LokiRed@v0.1.0
   with:
+    mode: scan
     scan-path: "."
     output-format: "text"
     fail-on: "high"
 ```
 
-For SARIF upload, see `.github/workflows/lokired-sarif.yml`.
+Pull-request policy workflow:
+
+```yaml
+permissions:
+  contents: read
+
+steps:
+  - uses: actions/checkout@v6
+    with:
+      fetch-depth: 0
+      ref: ${{ github.event.pull_request.head.sha }}
+  - uses: actions/setup-python@v6
+    with:
+      python-version: "3.12"
+  - uses: HakuBlue/LokiRed@v0.1.0
+    with:
+      mode: policy-check
+      scan-path: "."
+      base-ref: ${{ github.event.pull_request.base.sha }}
+      head-ref: ${{ github.event.pull_request.head.sha }}
+      output-format: "text"
+      fail-on: "high"
+      markdown-summary-path: "lokired-pr-summary.md"
+      json-report-path: "lokired-pr-report.json"
+      append-step-summary: "true"
+```
+
+For a gradual rollout, start with `mode: diff` or policy rules that use `warn`, review summaries for noise, tune policy and exceptions, then enable blocking only for new high-confidence high or critical permission expansions. Copy-paste examples live in `docs/examples/lokired-pr-policy.yml` and `docs/examples/lokired-pr-warn-only.yml`.
+
+The core Action needs only `contents: read` on the checked-out repository. It does not post PR comments, require a GitHub App, require cloud credentials, upload raw config, or upload secret values. SARIF upload remains optional and separate; see `.github/workflows/lokired-sarif.yml`.
 
 ## Exit Codes
 

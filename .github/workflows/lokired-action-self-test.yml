@@ -1,0 +1,61 @@
+name: LokiRed Action self-test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  scan-mode:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Run checked-out Action in scan mode
+        uses: ./
+        with:
+          mode: scan
+          scan-path: "."
+          policy-path: ".lokired.yml"
+          output-format: "text"
+          fail-on: "high"
+
+  policy-check-mode:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out pull request head
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Run checked-out Action in policy-check mode
+        uses: ./
+        with:
+          mode: policy-check
+          scan-path: "."
+          base-ref: ${{ github.event.pull_request.base.sha }}
+          head-ref: ${{ github.event.pull_request.head.sha }}
+          output-format: "text"
+          fail-on: "high"
+          markdown-summary-path: "lokired-pr-summary.md"
+          json-report-path: "lokired-pr-report.json"
+          append-step-summary: "true"
