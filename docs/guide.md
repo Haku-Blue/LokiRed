@@ -271,7 +271,7 @@ Scan-only workflow:
 - uses: actions/setup-python@v6
   with:
     python-version: "3.12"
-- uses: HakuBlue/LokiRed@v0.1.0
+- uses: HakuBlue/LokiRed@v0.2.0
   with:
     mode: scan
     scan-path: "."
@@ -282,28 +282,38 @@ Scan-only workflow:
 Pull-request policy workflow:
 
 ```yaml
+name: LokiRed PR policy
+
+on:
+  pull_request:
+
 permissions:
   contents: read
 
-steps:
-  - uses: actions/checkout@v6
-    with:
-      fetch-depth: 0
-      ref: ${{ github.event.pull_request.head.sha }}
-  - uses: actions/setup-python@v6
-    with:
-      python-version: "3.12"
-  - uses: HakuBlue/LokiRed@v0.1.0
-    with:
-      mode: policy-check
-      scan-path: "."
-      base-ref: ${{ github.event.pull_request.base.sha }}
-      head-ref: ${{ github.event.pull_request.head.sha }}
-      output-format: "text"
-      fail-on: "high"
-      markdown-summary-path: "lokired-pr-summary.md"
-      json-report-path: "lokired-pr-report.json"
-      append-step-summary: "true"
+jobs:
+  lokired:
+    name: LokiRed policy check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: HakuBlue/LokiRed@v0.2.0
+        with:
+          mode: policy-check
+          scan-path: "."
+          base-ref: ${{ github.event.pull_request.base.sha }}
+          head-ref: ${{ github.event.pull_request.head.sha }}
+          output-format: "text"
+          fail-on: "high"
+          markdown-summary-path: "lokired-pr-summary.md"
+          json-report-path: "lokired-pr-report.json"
+          append-step-summary: "true"
 ```
 
 For a gradual rollout, start with `mode: diff` or policy rules that use `warn`, review summaries for noise, tune policy and exceptions, then enable blocking only for new high-confidence high or critical permission expansions. Copy-paste workflow examples live in `docs/examples/lokired-pr-policy.yml` and `docs/examples/lokired-pr-warn-only.yml`. Copy-paste policy templates live in [policy-templates.md](policy-templates.md), and branch-protection sequencing lives in [branch-protection-rollout.md](branch-protection-rollout.md).

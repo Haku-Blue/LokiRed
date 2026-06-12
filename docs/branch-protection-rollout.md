@@ -7,7 +7,7 @@ Use this sequence when adding LokiRed to a repository for the first time.
 Create `.github/workflows/lokired-pr.yml`:
 
 ```yaml
-name: LokiRed PR policy
+name: LokiRed PR permission review
 
 on:
   pull_request:
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   lokired:
-    name: LokiRed policy check
+    name: LokiRed permission review
     runs-on: ubuntu-latest
 
     steps:
@@ -33,7 +33,7 @@ jobs:
           python-version: "3.12"
 
       - name: Review AI-agent permission changes
-        uses: HakuBlue/LokiRed@v0.1.0
+        uses: HakuBlue/LokiRed@v0.2.0
         with:
           mode: diff
           scan-path: "."
@@ -49,10 +49,10 @@ This starts in warn-only review mode. It writes a Markdown summary and JSON arti
 
 ## 2. Confirm The Check Context Exists
 
-Open a pull request and let the workflow complete successfully. In GitHub, the required check context will appear after the workflow has run. With the workflow above, expect a context similar to:
+Open a pull request and let the workflow complete successfully. In GitHub, the check context will appear after the workflow has run. With the warn-only workflow above, expect a context similar to:
 
 ```text
-LokiRed PR policy / LokiRed policy check
+LokiRed PR permission review / LokiRed permission review
 ```
 
 Keep job names unique across workflows so branch protection does not become ambiguous.
@@ -70,9 +70,15 @@ Review noisy selectors, unused suppressions, and developer feedback. Keep old kn
 
 ## 4. Enable Enforcement
 
-Switch the workflow step to:
+Switch the workflow name, job name, and step to:
 
 ```yaml
+name: LokiRed PR policy
+
+jobs:
+  lokired:
+    name: LokiRed policy check
+
 with:
   mode: policy-check
   scan-path: "."
@@ -89,16 +95,16 @@ Use `docs/examples/policy-high-confidence-enforcement.yml` as the starting point
 
 ## 5. Require The Check
 
-After the `policy-check` workflow has passed at least once, configure branch protection or a repository ruleset:
+After the enforcing `policy-check` workflow has passed at least once and GitHub has observed the exact successful check context, configure branch protection or a repository ruleset:
 
 1. Open repository settings.
 2. Go to branch protection or rulesets.
 3. Enable required status checks.
-4. Select the exact LokiRed check context that already appeared on a pull request.
+4. Select the exact enforcing LokiRed check context that already appeared and passed on a pull request, such as `LokiRed PR policy / LokiRed policy check`.
 5. Keep existing required checks such as unit tests, package smoke tests, build, and lint checks.
 6. Save the rule.
 
-Do not require the LokiRed context before GitHub has seen it at least once. That can make rollout look broken even when the workflow file is correct.
+Do not require the enforcing LokiRed context before GitHub has seen it pass at least once. That can make rollout look broken even when the workflow file is correct.
 
 ## 6. Preserve Existing Quality Gates
 
