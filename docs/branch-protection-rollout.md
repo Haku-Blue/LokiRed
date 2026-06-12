@@ -1,6 +1,6 @@
 # Branch Protection Rollout
 
-Use this sequence when adding LokiRed to a repository for the first time.
+Use this sequence when adding LokiRed to a repository for the first time. If you want a browser-only walkthrough for a first test pull request, start with [pr-action-quickstart.md](pr-action-quickstart.md), then return here before enabling branch protection.
 
 ## 1. Add The Action
 
@@ -43,9 +43,16 @@ jobs:
           markdown-summary-path: "lokired-pr-summary.md"
           json-report-path: "lokired-pr-report.json"
           append-step-summary: "true"
+
+      - name: Upload LokiRed JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lokired-pr-report
+          path: lokired-pr-report.json
 ```
 
-This starts in warn-only review mode. It writes a Markdown summary and JSON artifact without blocking merges for policy decisions.
+This starts in warn-only review mode. It writes a Markdown summary, writes a JSON report file, and uploads that JSON report as a retained workflow artifact without blocking merges for policy decisions.
 
 ## 2. Confirm The Check Context Exists
 
@@ -59,7 +66,9 @@ Keep job names unique across workflows so branch protection does not become ambi
 
 ## 3. Tune Policy In Warn-Only Mode
 
-Copy `docs/examples/policy-warn-only.yml` to `.lokired/policy.yml`, then run:
+Copy `docs/examples/policy-warn-only.yml` to `.lokired/policy.yml`.
+
+Optional local validation for developers who have installed the LokiRed CLI:
 
 ```powershell
 lokired policy validate
@@ -70,25 +79,53 @@ Review noisy selectors, unused suppressions, and developer feedback. Keep old kn
 
 ## 4. Enable Enforcement
 
-Switch the workflow name, job name, and step to:
+Switch the workflow to the enforcing policy-check version:
 
 ```yaml
 name: LokiRed PR policy
 
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
 jobs:
   lokired:
     name: LokiRed policy check
+    runs-on: ubuntu-latest
 
-with:
-  mode: policy-check
-  scan-path: "."
-  base-ref: ${{ github.event.pull_request.base.sha }}
-  head-ref: ${{ github.event.pull_request.head.sha }}
-  output-format: "text"
-  fail-on: "high"
-  markdown-summary-path: "lokired-pr-summary.md"
-  json-report-path: "lokired-pr-report.json"
-  append-step-summary: "true"
+    steps:
+      - name: Check out pull request head
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Check AI-agent permission changes
+        uses: HakuBlue/LokiRed@v0.2.0
+        with:
+          mode: policy-check
+          scan-path: "."
+          base-ref: ${{ github.event.pull_request.base.sha }}
+          head-ref: ${{ github.event.pull_request.head.sha }}
+          output-format: "text"
+          fail-on: "high"
+          markdown-summary-path: "lokired-pr-summary.md"
+          json-report-path: "lokired-pr-report.json"
+          append-step-summary: "true"
+
+      - name: Upload LokiRed JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lokired-pr-report
+          path: lokired-pr-report.json
 ```
 
 Use `docs/examples/policy-high-confidence-enforcement.yml` as the starting point for enforcement. Keep `diff` mode available in a separate branch or test repository if you need a non-blocking rehearsal.

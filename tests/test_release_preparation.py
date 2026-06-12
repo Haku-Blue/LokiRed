@@ -29,6 +29,7 @@ class ReleasePreparationTest(unittest.TestCase):
         public_examples = [
             PROJECT_ROOT / "README.md",
             PROJECT_ROOT / "docs" / "guide.md",
+            PROJECT_ROOT / "docs" / "pr-action-quickstart.md",
             PROJECT_ROOT / "docs" / "branch-protection-rollout.md",
             PROJECT_ROOT / "docs" / "examples" / "lokired-pr-warn-only.yml",
             PROJECT_ROOT / "docs" / "examples" / "lokired-pr-policy.yml",
@@ -47,10 +48,13 @@ class ReleasePreparationTest(unittest.TestCase):
 
         self.assertIn("name: LokiRed permission review", warn_only)
         self.assertIn("mode: diff", warn_only)
+        self.assertIn("uses: actions/upload-artifact@v4", warn_only)
         self.assertIn("name: LokiRed policy check", enforcing)
         self.assertIn("mode: policy-check", enforcing)
+        self.assertIn("uses: actions/upload-artifact@v4", enforcing)
         self.assertIn("before GitHub has seen it pass at least once", rollout)
         self.assertIn("LokiRed PR policy / LokiRed policy check", rollout)
+        self.assertIn("pr-action-quickstart.md", rollout)
 
     def test_repository_native_pr_review_workflow_is_warn_only_and_minimal_permission(self) -> None:
         workflow = (PROJECT_ROOT / ".github" / "workflows" / "lokired-pr-review.yml").read_text(encoding="utf-8")

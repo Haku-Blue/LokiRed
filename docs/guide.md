@@ -2,7 +2,7 @@
 
 LokiRed is local-first. A scan reads files from the repository or workspace you point it at, applies deterministic rules, evaluates optional local policy and baseline files, and renders text, JSON, or SARIF. It does not require a remote service or telemetry.
 
-See the [coverage matrix](coverage.md), [policy templates](policy-templates.md), [branch-protection rollout](branch-protection-rollout.md), [threat model](threat-model.md), and [privacy model](privacy-model.md) for explicit scanner, security, and data-handling boundaries.
+See the [coverage matrix](coverage.md), [policy templates](policy-templates.md), [browser-only PR Action quickstart](pr-action-quickstart.md), [branch-protection rollout](branch-protection-rollout.md), [threat model](threat-model.md), and [privacy model](privacy-model.md) for explicit scanner, security, and data-handling boundaries.
 
 ## Scan Flow
 
@@ -253,7 +253,7 @@ Inputs:
 - `fail-on`: Lowest severity that fails the action. Defaults to `high`.
 - `write-baseline`: Optional path for writing a baseline JSON file in `scan` mode.
 - `markdown-summary-path`: Path for the Markdown PR summary in `diff` or `policy-check` mode.
-- `json-report-path`: Optional path for a JSON report artifact.
+- `json-report-path`: Optional path for a JSON report file. Add `actions/upload-artifact` in the workflow when you want GitHub to retain that file after the run completes.
 - `append-step-summary`: Whether PR modes append Markdown to `$GITHUB_STEP_SUMMARY`. Defaults to `true`.
 
 Outputs:
@@ -314,9 +314,14 @@ jobs:
           markdown-summary-path: "lokired-pr-summary.md"
           json-report-path: "lokired-pr-report.json"
           append-step-summary: "true"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lokired-pr-report
+          path: lokired-pr-report.json
 ```
 
-For a gradual rollout, start with `mode: diff` or policy rules that use `warn`, review summaries for noise, tune policy and exceptions, then enable blocking only for new high-confidence high or critical permission expansions. Copy-paste workflow examples live in `docs/examples/lokired-pr-policy.yml` and `docs/examples/lokired-pr-warn-only.yml`. Copy-paste policy templates live in [policy-templates.md](policy-templates.md), and branch-protection sequencing lives in [branch-protection-rollout.md](branch-protection-rollout.md).
+For a gradual rollout, start with `mode: diff` or policy rules that use `warn`, review summaries for noise, tune policy and exceptions, then enable blocking only for new high-confidence high or critical permission expansions. Start with [pr-action-quickstart.md](pr-action-quickstart.md) if you want the browser-only setup path. Copy-paste workflow examples live in `docs/examples/lokired-pr-policy.yml` and `docs/examples/lokired-pr-warn-only.yml`. Copy-paste policy templates live in [policy-templates.md](policy-templates.md), and branch-protection sequencing lives in [branch-protection-rollout.md](branch-protection-rollout.md).
 
 The core Action needs only `contents: read` on the checked-out repository. It does not post PR comments, require a GitHub App, require cloud credentials, upload raw config, or upload secret values. SARIF upload remains optional and separate; see `.github/workflows/lokired-sarif.yml`.
 
