@@ -339,6 +339,8 @@ Legacy schema `1.0` finding-only baselines still load for finding diffing, but g
 
 ## Using LokiRed In CI
 
+New to GitHub Actions or testing from the browser only? Start with the [browser-only PR Action quickstart](docs/pr-action-quickstart.md). It walks through creating the workflow file, opening the test pull request, finding the summary, and recording the successful check context before branch protection.
+
 The `--fail-on` option controls whether LokiRed exits successfully or fails the build.
 
 Fail on high or critical findings:
@@ -420,6 +422,13 @@ jobs:
           markdown-summary-path: "lokired-pr-summary.md"
           json-report-path: "lokired-pr-report.json"
           append-step-summary: "true"
+
+      - name: Upload LokiRed JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lokired-pr-report
+          path: lokired-pr-report.json
 ```
 
 `actions/checkout` should use `fetch-depth: 0` for ref comparisons. If `base-ref` is omitted on a pull request, the Action uses `origin/${GITHUB_BASE_REF}`; when that ref is not present or the run is not a pull request, configure `base-ref` explicitly. LokiRed does not post PR comments, request write permissions, upload raw config, or require a GitHub App for this workflow.
@@ -444,7 +453,7 @@ Example Markdown summary excerpt:
 | Block | Expanded | VS Code MCP | filesystem write | workspace | / |
 ```
 
-For gradual rollout, start with `mode: diff` or policy rules that use `warn`, review the summaries for noise, tune policy and accountable exceptions, then switch branch protection to require the blocking `policy-check` job only for new high-confidence permission expansions. Copy-paste workflow examples live in `docs/examples/lokired-pr-policy.yml` and `docs/examples/lokired-pr-warn-only.yml`; copy-paste policy templates live in [docs/policy-templates.md](docs/policy-templates.md). See [docs/branch-protection-rollout.md](docs/branch-protection-rollout.md) for the branch-protection sequence.
+For gradual rollout, start with `mode: diff` or policy rules that use `warn`, review the summaries for noise, tune policy and accountable exceptions, then switch branch protection to require the blocking `policy-check` job only for new high-confidence permission expansions. Browser-only first-install guidance lives in [docs/pr-action-quickstart.md](docs/pr-action-quickstart.md); copy-paste workflow examples live in `docs/examples/lokired-pr-policy.yml` and `docs/examples/lokired-pr-warn-only.yml`; copy-paste policy templates live in [docs/policy-templates.md](docs/policy-templates.md). See [docs/branch-protection-rollout.md](docs/branch-protection-rollout.md) for the branch-protection sequence.
 
 To upload SARIF into GitHub code scanning, enable code scanning for the repository first. The checked-in SARIF workflow skips the upload step by default so repositories without code scanning enabled still pass CI. After enabling code scanning, set the repository variable `LOKIRED_UPLOAD_CODE_SCANNING` to `true`.
 

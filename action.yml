@@ -51,7 +51,7 @@ inputs:
     required: false
     default: "lokired-summary.md"
   json-report-path:
-    description: Optional path for a JSON report artifact.
+    description: Optional path for a JSON report file. Upload it separately if the workflow should retain it as an artifact.
     required: false
     default: ""
   append-step-summary:
