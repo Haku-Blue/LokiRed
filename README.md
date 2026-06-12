@@ -14,9 +14,9 @@ LokiRed is built for teams using tools such as Codex, Claude Code, Cursor, Winds
 
 ## Project Status
 
-LokiRed Community v0.1.0 is an early CLI-first MVP. The scanner is deterministic, local-first, and useful without a hosted service.
+LokiRed Community v0.2.0 is an early CLI-first release. The scanner is deterministic, local-first, and useful without a hosted service.
 
-The current 0.1.x line focuses on repo and workspace scanning, CI enforcement, normalized inventory, policy, suppressions, baselines, and SARIF. Output schema details, supported ecosystems, and the rule set may still evolve while the project is pre-1.0, but the goal is stable, evidence-first findings that can run repeatably in CI.
+The current 0.2.x line focuses on repo and workspace scanning, CI enforcement, normalized inventory, policy, suppressions, baselines, SARIF, and pull-request permission-diff review. Output schema details, supported ecosystems, and the rule set may still evolve while the project is pre-1.0, but the goal is stable, evidence-first findings that can run repeatably in CI.
 
 ## What LokiRed Checks
 
@@ -227,7 +227,7 @@ Example shape:
   "report_schema_version": "1.1",
   "tool": {
     "name": "LokiRed",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "summary": {
     "total": 9,
@@ -373,7 +373,7 @@ The default `mode: scan` preserves the original scan-only behavior:
 
 ```yaml
 - name: Scan agent and MCP config
-  uses: HakuBlue/LokiRed@v0.1.0
+  uses: HakuBlue/LokiRed@v0.2.0
   with:
     scan-path: "."
     output-format: "text"
@@ -393,6 +393,7 @@ permissions:
 
 jobs:
   lokired:
+    name: LokiRed policy check
     runs-on: ubuntu-latest
 
     steps:
@@ -408,7 +409,7 @@ jobs:
           python-version: "3.12"
 
       - name: Check AI-agent permission changes
-        uses: HakuBlue/LokiRed@v0.1.0
+        uses: HakuBlue/LokiRed@v0.2.0
         with:
           mode: policy-check
           scan-path: "."
@@ -673,7 +674,7 @@ LokiRed's MVP design goal is to stay evidence-first:
 
 ## Roadmap Ideas
 
-Near-term direction after v0.1.0:
+Near-term direction after v0.2.0:
 
 - Keep improving pull-request review artifacts around baseline inventory and graph deltas.
 - Expand high-signal coverage for repo-visible agent and MCP configuration surfaces.

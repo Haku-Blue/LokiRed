@@ -235,7 +235,7 @@ def build_scan_payload(
         "report_schema_version": "1.1",
         "tool": {
             "name": "LokiRed",
-            "version": "0.1.0",
+            "version": "0.2.0",
         },
         "summary": {
             "total": len(findings),
@@ -473,7 +473,7 @@ def format_sarif_report_with_context(
                 "tool": {
                     "driver": {
                         "name": "LokiRed",
-                        "semanticVersion": "0.1.0",
+                        "semanticVersion": "0.2.0",
                         "informationUri": "https://github.com/",
                         "rules": [rules[rule_id] for rule_id in sorted(rules)],
                     }

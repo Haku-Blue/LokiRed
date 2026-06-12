@@ -1,4 +1,4 @@
-name: LokiRed PR policy
+name: LokiRed PR permission review
 
 on:
   pull_request:
@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   lokired:
-    name: LokiRed policy check
+    name: LokiRed permission review
     runs-on: ubuntu-latest
 
     steps:
@@ -23,15 +23,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Check AI-agent permission changes
-        uses: HakuBlue/LokiRed@v0.2.0
+      - name: Summarize AI-agent permission changes
+        uses: ./
         with:
-          mode: policy-check
+          mode: diff
           scan-path: "."
           base-ref: ${{ github.event.pull_request.base.sha }}
           head-ref: ${{ github.event.pull_request.head.sha }}
-          output-format: "text"
-          fail-on: "high"
+          output-format: "markdown"
           markdown-summary-path: "lokired-pr-summary.md"
           json-report-path: "lokired-pr-report.json"
           append-step-summary: "true"
