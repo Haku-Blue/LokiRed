@@ -33,7 +33,7 @@ jobs:
           python-version: "3.12"
 
       - name: Review AI-agent permission changes
-        uses: HakuBlue/LokiRed@v0.2.0
+        uses: Haku-Blue/LokiRed@v0.2.1
         with:
           mode: diff
           scan-path: "."
@@ -108,7 +108,7 @@ jobs:
           python-version: "3.12"
 
       - name: Check AI-agent permission changes
-        uses: HakuBlue/LokiRed@v0.2.0
+        uses: Haku-Blue/LokiRed@v0.2.1
         with:
           mode: policy-check
           scan-path: "."

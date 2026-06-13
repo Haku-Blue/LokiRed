@@ -1,7 +1,7 @@
 # LokiRed
 
-[![LokiRed](https://github.com/HakuBlue/LokiRed/actions/workflows/lokired.yml/badge.svg)](https://github.com/HakuBlue/LokiRed/actions/workflows/lokired.yml)
-[![Tests](https://github.com/HakuBlue/LokiRed/actions/workflows/tests.yml/badge.svg)](https://github.com/HakuBlue/LokiRed/actions/workflows/tests.yml)
+[![LokiRed](https://github.com/Haku-Blue/LokiRed/actions/workflows/lokired.yml/badge.svg)](https://github.com/Haku-Blue/LokiRed/actions/workflows/lokired.yml)
+[![Tests](https://github.com/Haku-Blue/LokiRed/actions/workflows/tests.yml/badge.svg)](https://github.com/Haku-Blue/LokiRed/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 LokiRed is a CLI scanner for AI-agent and MCP configuration risk.
@@ -14,7 +14,7 @@ LokiRed is built for teams using tools such as Codex, Claude Code, Cursor, Winds
 
 ## Project Status
 
-LokiRed Community v0.2.0 is an early CLI-first release. The scanner is deterministic, local-first, and useful without a hosted service.
+LokiRed Community v0.2.1 is an early CLI-first release. The scanner is deterministic, local-first, and useful without a hosted service.
 
 The current 0.2.x line focuses on repo and workspace scanning, CI enforcement, normalized inventory, policy, suppressions, baselines, SARIF, and pull-request permission-diff review. Output schema details, supported ecosystems, and the rule set may still evolve while the project is pre-1.0, but the goal is stable, evidence-first findings that can run repeatably in CI.
 
@@ -227,7 +227,7 @@ Example shape:
   "report_schema_version": "1.1",
   "tool": {
     "name": "LokiRed",
-    "version": "0.2.0"
+    "version": "0.2.1"
   },
   "summary": {
     "total": 9,
@@ -337,6 +337,26 @@ Baseline files use schema version `2.0`. They store finding fingerprints and an 
 
 Legacy schema `1.0` finding-only baselines still load for finding diffing, but graph diff is marked unavailable until the baseline is regenerated.
 
+## Reusable Staged-Directory Scanner API
+
+Hosted workers that already fetched supported configuration artifacts can reuse the same deterministic comparison core without creating Git repositories. Install the package, stage the base and head trees in disposable directories while preserving relative paths, then call:
+
+```python
+from scanner_api import compare_staged_directories
+
+comparison = compare_staged_directories(
+    base_path="path/to/staged-base",
+    head_path="path/to/staged-head",
+    base_label="base-sha",
+    head_label="head-sha",
+    fail_on="high",
+)
+
+safe_payload = comparison["hosted_safe"]
+```
+
+`comparison["base_result"]` and `comparison["head_result"]` are raw transient scan state for local debugging. Hosted services should persist `comparison["hosted_safe"]`, which contains relative-path inventory, findings, permission deltas, policy outcomes, coverage warnings, and comparison metadata with staged-root paths scrubbed. The API statically scans already-staged files and does not execute configured MCP servers, hooks, setup commands, or package-manager commands.
+
 ## Using LokiRed In CI
 
 New to GitHub Actions or testing from the browser only? Start with the [browser-only PR Action quickstart](docs/pr-action-quickstart.md). It walks through creating the workflow file, opening the test pull request, finding the summary, and recording the successful check context before branch protection.
@@ -375,7 +395,7 @@ The default `mode: scan` preserves the original scan-only behavior:
 
 ```yaml
 - name: Scan agent and MCP config
-  uses: HakuBlue/LokiRed@v0.2.0
+  uses: Haku-Blue/LokiRed@v0.2.1
   with:
     scan-path: "."
     output-format: "text"
@@ -411,7 +431,7 @@ jobs:
           python-version: "3.12"
 
       - name: Check AI-agent permission changes
-        uses: HakuBlue/LokiRed@v0.2.0
+        uses: Haku-Blue/LokiRed@v0.2.1
         with:
           mode: policy-check
           scan-path: "."
@@ -683,7 +703,7 @@ LokiRed's MVP design goal is to stay evidence-first:
 
 ## Roadmap Ideas
 
-Near-term direction after v0.2.0:
+Near-term direction after v0.2.1:
 
 - Keep improving pull-request review artifacts around baseline inventory and graph deltas.
 - Expand high-signal coverage for repo-visible agent and MCP configuration surfaces.
