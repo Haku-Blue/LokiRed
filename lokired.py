@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any, TypedDict
 
-from baseline import BaselineError, apply_baseline_diff, build_baseline, load_baseline, write_baseline
+from baseline import BaselineError, apply_baseline_diff, load_baseline, write_baseline
 from classification import classify_permissions
 from config_adapters import build_visibility_warnings
 from fingerprints import ensure_fingerprints
@@ -27,6 +27,7 @@ from reporter import (
     print_scan_report,
 )
 from rule_catalog import rule_metadata, sorted_rules
+from scanner_api import compare_scan_roots, public_scan_execution
 from security_file_scanner import detect_config_issues, find_security_config_targets
 
 
@@ -210,42 +211,40 @@ def run_scan(
 def execute_ref_comparison(repository_path: str, base_ref: str, head_ref: str) -> RefComparison:
     """Compare two Git refs by scanning disposable snapshots with existing primitives."""
     with materialize_git_ref_pair(repository_path, base_ref, head_ref) as pair:
-        base_result = execute_scan(str(pair.base.root_path))
-        head_result = execute_scan(str(pair.head.root_path))
-        base_graph = inventory_graph_snapshot(base_result["inventory"])
-        head_graph = inventory_graph_snapshot(head_result["inventory"])
-        baseline = build_baseline(base_result["active_findings"], str(pair.base.root_path), base_graph)
-        active_findings, diff = apply_baseline_diff(
-            head_result["active_findings"],
-            baseline,
-            str(pair.head.root_path),
-            head_graph,
+        comparison = compare_scan_roots(
+            pair.base.root_path,
+            pair.head.root_path,
+            comparison_type="git-ref",
+            base_metadata={
+                "ref": pair.base.ref,
+                "commit": pair.base.commit,
+                "files": list(pair.base.files),
+            },
+            head_metadata={
+                "ref": pair.head.ref,
+                "commit": pair.head.commit,
+                "files": list(pair.head.files),
+            },
         )
-        head_result = dict(head_result)  # type: ignore[assignment]
-        head_result["active_findings"] = _annotate_changed_findings(
-            base_result["active_findings"],
-            active_findings,
-        )  # type: ignore[typeddict-item]
-        head_result["diff"] = diff  # type: ignore[typeddict-item]
 
         return {
             "repository_path": str(pair.repository_path),
             "base": {
-                "ref": pair.base.ref,
-                "commit": pair.base.commit,
-                "root_path": str(pair.base.root_path),
-                "files": list(pair.base.files),
+                "ref": comparison["base"]["ref"],
+                "commit": comparison["base"]["commit"],
+                "root_path": comparison["base"]["root_path"],
+                "files": list(comparison["base"]["files"]),
             },
             "head": {
-                "ref": pair.head.ref,
-                "commit": pair.head.commit,
-                "root_path": str(pair.head.root_path),
-                "files": list(pair.head.files),
+                "ref": comparison["head"]["ref"],
+                "commit": comparison["head"]["commit"],
+                "root_path": comparison["head"]["root_path"],
+                "files": list(comparison["head"]["files"]),
             },
-            "base_result": base_result,
-            "head_result": head_result,
-            "base_inventory_graph": base_graph,
-            "head_inventory_graph": head_graph,
+            "base_result": comparison["base_result"],  # type: ignore[typeddict-item]
+            "head_result": comparison["head_result"],  # type: ignore[typeddict-item]
+            "base_inventory_graph": comparison["base_inventory_graph"],
+            "head_inventory_graph": comparison["head_inventory_graph"],
         }
 
 
@@ -593,42 +592,6 @@ def _finding_evidence_provenance(finding: dict[str, Any]) -> str:
     return "declared"
 
 
-def _annotate_changed_findings(
-    base_findings: list[dict[str, Any]],
-    head_findings: list[dict[str, Any]],
-) -> list[ScanFinding]:
-    base_by_fingerprint = {
-        str(finding.get("fingerprint", "")): finding
-        for finding in base_findings
-        if finding.get("fingerprint")
-    }
-    updated: list[ScanFinding] = []
-    for finding in head_findings:
-        copied = dict(finding)
-        base = base_by_fingerprint.get(str(copied.get("fingerprint", "")))
-        if base is not None and copied.get("baseline_state", copied.get("baseline_status")) == "unchanged":
-            before_action = str(base.get("policy_action", base.get("policy_decision", "")))
-            after_action = str(copied.get("policy_action", copied.get("policy_decision", "")))
-            if before_action != after_action:
-                copied["policy_delta"] = {
-                    "before": before_action,
-                    "after": after_action,
-                    "introduced_enforcement": (
-                        after_action in {"block", "require-review"}
-                        and before_action not in {"block", "require-review"}
-                    ),
-                }
-            before_severity = str(base.get("severity", ""))
-            after_severity = str(copied.get("severity", ""))
-            if before_severity != after_severity:
-                copied["severity_delta"] = {
-                    "before": before_severity,
-                    "after": after_severity,
-                }
-        updated.append(copied)  # type: ignore[arg-type]
-    return updated
-
-
 def _has_introduced_policy_failure(findings: list[ScanFinding]) -> bool:
     enforced = {"block", "require-review"}
     for finding in findings:
@@ -694,7 +657,7 @@ def _format_ref_comparison_json(
     fail_on: str | None,
 ) -> str:
     head_root = str(comparison["head"]["root_path"])
-    public_head = _public_scan_execution(comparison["head_result"], head_root)
+    public_head = public_scan_execution(comparison["head_result"], head_root)
     payload = build_scan_payload(
         public_head["active_findings"],
         public_head["targets"],
@@ -722,39 +685,6 @@ def _format_ref_comparison_json(
         "fail_on": fail_on,
     }
     return json.dumps(payload, indent=2, sort_keys=True)
-
-
-def _public_scan_execution(result: ScanExecution, root_path: str) -> ScanExecution:
-    return {
-        "targets": _scrub_paths(result["targets"], root_path),
-        "inventory": _scrub_paths(result["inventory"], root_path),
-        "classifications": _scrub_paths(result["classifications"], root_path),
-        "active_findings": _scrub_paths(result["active_findings"], root_path),
-        "suppressed_findings": _scrub_paths(result["suppressed_findings"], root_path),
-        "invalid_suppressions": _scrub_paths(result["invalid_suppressions"], root_path),
-        "coverage_warnings": _scrub_paths(result["coverage_warnings"], root_path),
-        "diff": _scrub_paths(result["diff"], root_path),
-    }  # type: ignore[return-value]
-
-
-def _scrub_paths(value: Any, root_path: str) -> Any:
-    if isinstance(value, dict):
-        return {key: _scrub_paths(child, root_path) for key, child in value.items()}
-    if isinstance(value, list):
-        return [_scrub_paths(item, root_path) for item in value]
-    if isinstance(value, str):
-        return _relative_to_root(value, root_path)
-    return value
-
-
-def _relative_to_root(value: str, root_path: str) -> str:
-    try:
-        path = Path(value)
-        if not path.is_absolute():
-            return value
-        return path.resolve().relative_to(Path(root_path).resolve()).as_posix()
-    except (OSError, ValueError):
-        return value
 
 
 if __name__ == "__main__":

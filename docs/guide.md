@@ -208,6 +208,28 @@ Finding fingerprints use rule id, config type, repo-relative path, structured co
 
 Malformed or incompatible baselines exit with status `2`.
 
+## Staged-Directory Library API
+
+Hosted workers can reuse LokiRed's deterministic scanner core after they have already staged supported base and head configuration artifacts into disposable directory trees. The staged directories do not need `.git` metadata.
+
+```python
+from scanner_api import compare_staged_directories
+
+comparison = compare_staged_directories(
+    base_path="path/to/staged-base",
+    head_path="path/to/staged-head",
+    base_label="base-sha",
+    head_label="head-sha",
+    fail_on="high",
+)
+
+safe_payload = comparison["hosted_safe"]
+```
+
+The function scans both staged trees, builds the base inventory graph, applies the same permission diff and policy annotation path used by `lokired diff` and `lokired policy check`, and returns deterministic structured results. `comparison["base_result"]` and `comparison["head_result"]` are raw transient scan state. Hosted integrations should persist `comparison["hosted_safe"]`, which is relative-path based, redacted, and includes findings, normalized inventory, permission deltas, policy outcomes, coverage warnings, and comparison metadata.
+
+This interface is intended for static scanning of already-staged configuration trees. It treats MCP startup commands, hooks, Copilot setup commands, and package-manager commands as data and does not execute configured tools.
+
 ## SARIF
 
 SARIF output is intended for GitHub code scanning:
@@ -271,7 +293,7 @@ Scan-only workflow:
 - uses: actions/setup-python@v6
   with:
     python-version: "3.12"
-- uses: HakuBlue/LokiRed@v0.2.0
+- uses: Haku-Blue/LokiRed@v0.2.1
   with:
     mode: scan
     scan-path: "."
@@ -303,7 +325,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: HakuBlue/LokiRed@v0.2.0
+      - uses: Haku-Blue/LokiRed@v0.2.1
         with:
           mode: policy-check
           scan-path: "."

@@ -8,7 +8,7 @@ This starts with a warn-only pull-request review. It does not block merges, post
 
 - A GitHub repository where you can create branches and pull requests.
 - GitHub Actions enabled for the repository.
-- Permission to use third-party Actions such as `HakuBlue/LokiRed@v0.2.0`, `actions/checkout@v6`, `actions/setup-python@v6`, and `actions/upload-artifact@v4`.
+- Permission to use third-party Actions such as `Haku-Blue/LokiRed@v0.2.1`, `actions/checkout@v6`, `actions/setup-python@v6`, and `actions/upload-artifact@v4`.
 
 If you are testing in a new empty repository, create the repository first, add a simple `README.md` on `main`, and then continue with the workflow branch below.
 
@@ -52,7 +52,7 @@ jobs:
           python-version: "3.12"
 
       - name: Summarize AI-agent permission changes
-        uses: HakuBlue/LokiRed@v0.2.0
+        uses: Haku-Blue/LokiRed@v0.2.1
         with:
           mode: diff
           scan-path: "."
@@ -157,8 +157,8 @@ Next rollout decision:
 | Symptom | Likely issue | What to check |
 | --- | --- | --- |
 | No workflow run appears | Actions are disabled or restricted, the workflow path is wrong, the YAML is malformed, or no pull request has been opened or updated. | Confirm the file path is exactly `.github/workflows/lokired-pr.yml`, open the repository **Actions** tab, and push a small update to the pull request branch. |
-| External Action blocked | Repository, organization, or enterprise policy restricts third-party Actions. | Ask a repository or organization admin whether `HakuBlue/LokiRed@v0.2.0`, `actions/checkout@v6`, `actions/setup-python@v6`, and `actions/upload-artifact@v4` are allowed. |
-| Action not found | The `uses:` value has a typo or points to a tag that does not exist. | Use `HakuBlue/LokiRed@v0.2.0` exactly for this release. |
+| External Action blocked | Repository, organization, or enterprise policy restricts third-party Actions. | Ask a repository or organization admin whether `Haku-Blue/LokiRed@v0.2.1`, `actions/checkout@v6`, `actions/setup-python@v6`, and `actions/upload-artifact@v4` are allowed. |
+| Action not found | The `uses:` value has a typo or points to a tag that does not exist. | Use `Haku-Blue/LokiRed@v0.2.1` exactly for this release. |
 | Ref comparison fails | The checkout did not fetch enough history, or the base/head refs are incorrect. | Keep `fetch-depth: 0`, `base-ref: ${{ github.event.pull_request.base.sha }}`, and `head-ref: ${{ github.event.pull_request.head.sha }}`. |
 | Workflow needs approval | The pull request came from a public fork or an untrusted contributor path that requires manual approval. | A maintainer may need to approve the workflow run from the pull request or Actions page. |
 | Summary not found | The workflow run page is open, but the run summary or LokiRed step summary has not been expanded. | Open the check **Details** page, then look for the job summary and the `Summarize AI-agent permission changes` step. |
