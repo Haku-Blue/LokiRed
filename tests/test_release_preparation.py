@@ -8,15 +8,15 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LEGACY_ACTION_OWNER = "HakuBlue/LokiRed@"
 OLD_ACTION_PIN = "Haku-Blue/LokiRed@v" + ".".join(["0", "1", "0"])
-CURRENT_ACTION_PIN = "Haku-Blue/LokiRed@" + "v0.2.1"
+CURRENT_ACTION_PIN = "Haku-Blue/LokiRed@" + "v0.2.2"
 
 
 class ReleasePreparationTest(unittest.TestCase):
-    def test_pyproject_declares_v021_and_pep639_license_metadata(self) -> None:
+    def test_pyproject_declares_v022_and_pep639_license_metadata(self) -> None:
         pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
         project = pyproject["project"]
-        self.assertEqual(project["version"], "0.2.1")
+        self.assertEqual(project["version"], "0.2.2")
         self.assertEqual(project["license"], "Apache-2.0")
         self.assertEqual(project["license-files"], ["LICENSE"])
         self.assertTrue((PROJECT_ROOT / "LICENSE").is_file())
@@ -26,7 +26,7 @@ class ReleasePreparationTest(unittest.TestCase):
         )
         self.assertIn("setuptools>=77", pyproject["build-system"]["requires"])
 
-    def test_public_action_examples_reference_v021_and_stable_check_names(self) -> None:
+    def test_public_action_examples_reference_v022_and_stable_check_names(self) -> None:
         public_examples = [
             PROJECT_ROOT / "README.md",
             PROJECT_ROOT / "docs" / "guide.md",

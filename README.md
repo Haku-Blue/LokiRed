@@ -14,7 +14,7 @@ LokiRed is built for teams using tools such as Codex, Claude Code, Cursor, Winds
 
 ## Project Status
 
-LokiRed Community v0.2.1 is an early CLI-first release. The scanner is deterministic, local-first, and useful without a hosted service.
+LokiRed Community v0.2.2 is an early CLI-first release. The scanner is deterministic, local-first, and useful without a hosted service.
 
 The current 0.2.x line focuses on repo and workspace scanning, CI enforcement, normalized inventory, policy, suppressions, baselines, SARIF, and pull-request permission-diff review. Output schema details, supported ecosystems, and the rule set may still evolve while the project is pre-1.0, but the goal is stable, evidence-first findings that can run repeatably in CI.
 
@@ -227,7 +227,7 @@ Example shape:
   "report_schema_version": "1.1",
   "tool": {
     "name": "LokiRed",
-    "version": "0.2.1"
+    "version": "0.2.2"
   },
   "summary": {
     "total": 9,
@@ -357,6 +357,24 @@ safe_payload = comparison["hosted_safe"]
 
 `comparison["base_result"]` and `comparison["head_result"]` are raw transient scan state for local debugging. Hosted services should persist `comparison["hosted_safe"]`, which contains relative-path inventory, findings, permission deltas, policy outcomes, coverage warnings, and comparison metadata with staged-root paths scrubbed. The API statically scans already-staged files and does not execute configured MCP servers, hooks, setup commands, or package-manager commands.
 
+Hosted services can also normalize a transient MCP settings document without treating it as a repository file:
+
+```python
+from scanner_api import (
+    build_hosted_safe_mcp_snapshot,
+    compare_hosted_safe_inventory_snapshots,
+)
+
+snapshot = build_hosted_safe_mcp_snapshot(
+    {"mcpServers": {}},
+    source_scope="github_setting",
+    source_label="copilot_cloud_agent_mcp",
+)
+drift = compare_hosted_safe_inventory_snapshots(previous_snapshot, snapshot)
+```
+
+This API accepts a JSON object or JSON string within documented bounds, reuses LokiRed's static MCP parser and normalized graph, and returns only a hosted-safe projection. It never returns raw input, commands, arguments, URLs, values, temporary paths, or GitHub annotation coordinates.
+
 ## Using LokiRed In CI
 
 New to GitHub Actions or testing from the browser only? Start with the [browser-only PR Action quickstart](docs/pr-action-quickstart.md). It walks through creating the workflow file, opening the test pull request, finding the summary, and recording the successful check context before branch protection.
@@ -395,7 +413,7 @@ The default `mode: scan` preserves the original scan-only behavior:
 
 ```yaml
 - name: Scan agent and MCP config
-  uses: Haku-Blue/LokiRed@v0.2.1
+  uses: Haku-Blue/LokiRed@v0.2.2
   with:
     scan-path: "."
     output-format: "text"
@@ -431,7 +449,7 @@ jobs:
           python-version: "3.12"
 
       - name: Check AI-agent permission changes
-        uses: Haku-Blue/LokiRed@v0.2.1
+        uses: Haku-Blue/LokiRed@v0.2.2
         with:
           mode: policy-check
           scan-path: "."
@@ -703,7 +721,7 @@ LokiRed's MVP design goal is to stay evidence-first:
 
 ## Roadmap Ideas
 
-Near-term direction after v0.2.1:
+Near-term direction after v0.2.2:
 
 - Keep improving pull-request review artifacts around baseline inventory and graph deltas.
 - Expand high-signal coverage for repo-visible agent and MCP configuration surfaces.

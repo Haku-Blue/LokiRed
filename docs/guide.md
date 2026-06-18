@@ -293,7 +293,7 @@ Scan-only workflow:
 - uses: actions/setup-python@v6
   with:
     python-version: "3.12"
-- uses: Haku-Blue/LokiRed@v0.2.1
+- uses: Haku-Blue/LokiRed@v0.2.2
   with:
     mode: scan
     scan-path: "."
@@ -325,7 +325,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: Haku-Blue/LokiRed@v0.2.1
+      - uses: Haku-Blue/LokiRed@v0.2.2
         with:
           mode: policy-check
           scan-path: "."
