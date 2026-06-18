@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
+import json
 import re
+import tempfile
 from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, TypedDict
 
-from baseline import apply_baseline_diff, build_baseline
+from baseline import apply_baseline_diff, build_baseline, diff_inventory_graph
 from inventory import inventory_graph_snapshot
 from reporter import build_scan_payload
 from security_file_scanner import SECRET_ASSIGNMENT_PATTERN, SECRET_VALUE_PATTERN
 
 
 VALID_FAIL_ON_THRESHOLDS = frozenset({"low", "medium", "high", "critical", "none"})
+HOSTED_SAFE_MCP_SNAPSHOT_SCHEMA_VERSION = "1.0"
+HOSTED_SAFE_MCP_SOURCE_SCOPE = "github_setting"
+HOSTED_SAFE_MCP_MAX_INPUT_BYTES = 262_144
+HOSTED_SAFE_MCP_MAX_DEPTH = 32
+HOSTED_SAFE_MCP_MAX_COLLECTION_ITEMS = 10_000
+HOSTED_SAFE_MCP_MAX_STRING_LENGTH = 16_384
+_HOSTED_SAFE_SOURCE_LABEL_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 
 class ComparisonEndpoint(TypedDict, total=False):
@@ -47,6 +57,104 @@ class StagedDirectoryComparison(ScanRootComparison, total=False):
     """
 
     hosted_safe: dict[str, Any]
+
+
+def build_hosted_safe_mcp_snapshot(
+    document: Mapping[str, object] | str,
+    *,
+    source_scope: str,
+    source_label: str,
+) -> dict[str, Any]:
+    """Normalize one transient MCP document into a hosted-safe snapshot.
+
+    The document is scanned only as static data through LokiRed's existing MCP
+    parser and normalization pipeline. The returned projection intentionally
+    omits raw source, commands, arguments, URLs, values, temporary paths, and
+    line-annotation coordinates.
+    """
+    if source_scope != HOSTED_SAFE_MCP_SOURCE_SCOPE:
+        raise ValueError(f"source_scope must be {HOSTED_SAFE_MCP_SOURCE_SCOPE!r}")
+    if not _HOSTED_SAFE_SOURCE_LABEL_PATTERN.fullmatch(source_label):
+        raise ValueError("source_label must be a safe lowercase identifier")
+    _, canonical_document = _validated_hosted_mcp_document(document)
+
+    # The stable filename is an internal parser adapter only. It is removed with
+    # the temporary directory and is never exposed in the returned snapshot.
+    with tempfile.TemporaryDirectory(prefix="lokired-hosted-mcp-") as temp_dir:
+        root = Path(temp_dir)
+        (root / ".mcp.json").write_text(canonical_document, encoding="utf-8")
+        from lokired import execute_scan
+
+        result = execute_scan(str(root))
+        graph = _hosted_safe_inventory_graph(
+            inventory_graph_snapshot(result["inventory"]),
+            source_scope=source_scope,
+            source_label=source_label,
+        )
+        findings = [
+            _hosted_safe_finding(
+                item, source_scope=source_scope, source_label=source_label
+            )
+            for item in result["active_findings"]
+        ]
+        classifications = [
+            _hosted_safe_classification(
+                item, source_scope=source_scope, source_label=source_label
+            )
+            for item in result["classifications"]
+        ]
+
+    return {
+        "schema_version": HOSTED_SAFE_MCP_SNAPSHOT_SCHEMA_VERSION,
+        "source_scope": source_scope,
+        "source_label": source_label,
+        "inventory_graph": graph,
+        "findings": sorted(findings, key=_hosted_safe_record_sort_key),
+        "classifications": sorted(classifications, key=_hosted_safe_record_sort_key),
+        "coverage_warnings": [],
+        "counts": {
+            "clients": len(graph["clients"]),
+            "servers": len(graph["servers"]),
+            "capabilities": len(graph["capabilities"]),
+            "evidence": len(graph["evidence"]),
+            "findings": len(findings),
+            "classifications": len(classifications),
+        },
+        "input_shape": "mcp_document",
+        "raw_input_included": False,
+    }
+
+
+def compare_hosted_safe_inventory_snapshots(
+    base_snapshot: Mapping[str, object] | None,
+    head_snapshot: Mapping[str, object],
+) -> dict[str, Any]:
+    """Compare two hosted-safe snapshots through LokiRed's graph diff logic."""
+    head = _validated_hosted_safe_snapshot(head_snapshot, "head_snapshot")
+    empty_summary = {
+        change_type: 0
+        for change_type in ("added", "removed", "changed", "expanded", "narrowed")
+    }
+    if base_snapshot is None:
+        return {
+            "schema_version": HOSTED_SAFE_MCP_SNAPSHOT_SCHEMA_VERSION,
+            "source_scope": HOSTED_SAFE_MCP_SOURCE_SCOPE,
+            "observed_state": "baseline",
+            "available": True,
+            "summary": empty_summary,
+            "deltas": [],
+        }
+
+    base = _validated_hosted_safe_snapshot(base_snapshot, "base_snapshot")
+    diff = diff_inventory_graph(base["inventory_graph"], head["inventory_graph"])
+    return {
+        "schema_version": HOSTED_SAFE_MCP_SNAPSHOT_SCHEMA_VERSION,
+        "source_scope": HOSTED_SAFE_MCP_SOURCE_SCOPE,
+        "observed_state": "unchanged" if not diff["deltas"] else "changed",
+        "available": bool(diff["available"]),
+        "summary": dict(diff["summary"]),
+        "deltas": list(diff["deltas"]),
+    }
 
 
 def compare_staged_directories(
@@ -97,7 +205,9 @@ def compare_scan_roots(
     head_result = execute_scan(str(head_root))
     base_graph = inventory_graph_snapshot(base_result["inventory"])
     head_graph = inventory_graph_snapshot(head_result["inventory"])
-    baseline = build_baseline(base_result["active_findings"], str(base_root), base_graph)
+    baseline = build_baseline(
+        base_result["active_findings"], str(base_root), base_graph
+    )
     active_findings, diff = apply_baseline_diff(
         head_result["active_findings"],
         baseline,
@@ -305,6 +415,281 @@ def scrub_paths(
     return value
 
 
+def _validated_hosted_mcp_document(
+    document: Mapping[str, object] | str,
+) -> tuple[dict[str, Any], str]:
+    if isinstance(document, str):
+        if len(document.encode("utf-8")) > HOSTED_SAFE_MCP_MAX_INPUT_BYTES:
+            raise ValueError("MCP document exceeds the hosted-safe input byte limit")
+        try:
+            parsed = json.loads(document)
+        except (json.JSONDecodeError, RecursionError) as exc:
+            raise ValueError("MCP document must be valid JSON") from exc
+    elif isinstance(document, Mapping):
+        try:
+            serialized = json.dumps(dict(document), ensure_ascii=False, allow_nan=False)
+            parsed = json.loads(serialized)
+        except (TypeError, ValueError, RecursionError) as exc:
+            raise ValueError(
+                "MCP document must contain JSON-compatible values"
+            ) from exc
+    else:
+        raise ValueError("MCP document must be a JSON object or JSON string")
+
+    if not isinstance(parsed, dict):
+        raise ValueError("MCP document root must be a JSON object")
+    _validate_hosted_document_shape(parsed)
+    canonical = json.dumps(
+        parsed,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    if len(canonical.encode("utf-8")) > HOSTED_SAFE_MCP_MAX_INPUT_BYTES:
+        raise ValueError("MCP document exceeds the hosted-safe input byte limit")
+    return parsed, canonical
+
+
+def _validate_hosted_document_shape(document: dict[str, Any]) -> None:
+    total_items = 0
+    stack: list[tuple[Any, int]] = [(document, 1)]
+    while stack:
+        value, depth = stack.pop()
+        if depth > HOSTED_SAFE_MCP_MAX_DEPTH:
+            raise ValueError("MCP document exceeds the hosted-safe nesting limit")
+        if isinstance(value, dict):
+            total_items += len(value)
+            for key, child in value.items():
+                if not isinstance(key, str):
+                    raise ValueError("MCP document object keys must be strings")
+                if len(key) > HOSTED_SAFE_MCP_MAX_STRING_LENGTH:
+                    raise ValueError(
+                        "MCP document exceeds the hosted-safe string limit"
+                    )
+                stack.append((child, depth + 1))
+        elif isinstance(value, list):
+            total_items += len(value)
+            stack.extend((child, depth + 1) for child in value)
+        elif isinstance(value, str) and len(value) > HOSTED_SAFE_MCP_MAX_STRING_LENGTH:
+            raise ValueError("MCP document exceeds the hosted-safe string limit")
+        if total_items > HOSTED_SAFE_MCP_MAX_COLLECTION_ITEMS:
+            raise ValueError("MCP document exceeds the hosted-safe collection limit")
+
+
+def _hosted_safe_inventory_graph(
+    graph: dict[str, Any],
+    *,
+    source_scope: str,
+    source_label: str,
+) -> dict[str, Any]:
+    clients = [
+        _hosted_safe_graph_record(
+            record,
+            allowed=("id", "ecosystem", "config_scope", "evidence_ids"),
+            source_scope=source_scope,
+            source_label=source_label,
+        )
+        for record in graph.get("clients", [])
+        if isinstance(record, dict)
+    ]
+    servers = [
+        _hosted_safe_graph_record(
+            record,
+            allowed=(
+                "id",
+                "client_id",
+                "display_name",
+                "transport",
+                "package_source",
+                "version_or_digest",
+                "environment_variable_names",
+                "config_scope",
+                "evidence_ids",
+            ),
+            source_scope=source_scope,
+            source_label=source_label,
+        )
+        for record in graph.get("servers", [])
+        if isinstance(record, dict)
+    ]
+    capabilities = [
+        _hosted_safe_graph_record(
+            record,
+            allowed=(
+                "id",
+                "subject_id",
+                "category",
+                "operation",
+                "access_level",
+                "normalized_category",
+                "normalized_access_level",
+                "target",
+                "confidence",
+                "provenance",
+                "evidence_ids",
+            ),
+            source_scope=source_scope,
+            source_label=source_label,
+        )
+        for record in graph.get("capabilities", [])
+        if isinstance(record, dict)
+    ]
+    evidence = [
+        _hosted_safe_graph_record(
+            record,
+            allowed=("id", "provenance"),
+            source_scope=source_scope,
+            source_label=source_label,
+        )
+        for record in graph.get("evidence", [])
+        if isinstance(record, dict)
+    ]
+    return {
+        "schema_version": str(graph.get("schema_version", "")),
+        "clients": sorted(clients, key=_hosted_safe_record_sort_key),
+        "servers": sorted(servers, key=_hosted_safe_record_sort_key),
+        "capabilities": sorted(capabilities, key=_hosted_safe_record_sort_key),
+        "evidence": sorted(evidence, key=_hosted_safe_record_sort_key),
+    }
+
+
+def _hosted_safe_graph_record(
+    record: dict[str, Any],
+    *,
+    allowed: tuple[str, ...],
+    source_scope: str,
+    source_label: str,
+) -> dict[str, Any]:
+    projected = {
+        key: _hosted_safe_value(record[key]) for key in allowed if key in record
+    }
+    projected["source_scope"] = source_scope
+    projected["source_label"] = source_label
+    return projected
+
+
+def _hosted_safe_finding(
+    finding: Mapping[str, Any],
+    *,
+    source_scope: str,
+    source_label: str,
+) -> dict[str, Any]:
+    projected = {
+        key: _hosted_safe_value(finding[key])
+        for key in (
+            "fingerprint",
+            "rule_id",
+            "severity",
+            "title",
+            "description",
+            "remediation",
+            "confidence",
+            "recommended_action",
+            "risk",
+        )
+        if key in finding
+    }
+    projected.update(
+        {
+            "source_scope": source_scope,
+            "source_label": source_label,
+            "annotation_eligible": False,
+        }
+    )
+    return projected
+
+
+def _hosted_safe_classification(
+    classification: Mapping[str, Any],
+    *,
+    source_scope: str,
+    source_label: str,
+) -> dict[str, Any]:
+    projected = {
+        key: _hosted_safe_value(classification[key])
+        for key in (
+            "id",
+            "permission_id",
+            "resource_id",
+            "resource_name",
+            "ecosystem",
+            "category",
+            "access_level",
+            "scope",
+            "exposure",
+            "severity_hint",
+            "explanation",
+        )
+        if key in classification
+    }
+    projected.update(
+        {
+            "source_scope": source_scope,
+            "source_label": source_label,
+            "annotation_eligible": False,
+        }
+    )
+    return projected
+
+
+def _hosted_safe_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(key): _hosted_safe_value(child) for key, child in sorted(value.items())
+        }
+    if isinstance(value, list):
+        return [_hosted_safe_value(item) for item in value]
+    if isinstance(value, str):
+        if _contains_secret_value(value) or _contains_unrooted_absolute_path(value):
+            return "<redacted>"
+        if "://" in value or "\n" in value or "\r" in value:
+            return "<redacted>"
+        return value
+    return value
+
+
+def _hosted_safe_record_sort_key(record: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(record.get("id", record.get("fingerprint", ""))),
+        str(record.get("rule_id", record.get("category", ""))),
+        json.dumps(record, sort_keys=True, separators=(",", ":")),
+    )
+
+
+def _validated_hosted_safe_snapshot(
+    snapshot: Mapping[str, object],
+    parameter_name: str,
+) -> dict[str, Any]:
+    if not isinstance(snapshot, Mapping):
+        raise ValueError(f"{parameter_name} must be an object")
+    copied = dict(snapshot)
+    if copied.get("schema_version") != HOSTED_SAFE_MCP_SNAPSHOT_SCHEMA_VERSION:
+        raise ValueError(f"{parameter_name} has an unsupported schema_version")
+    if copied.get("source_scope") != HOSTED_SAFE_MCP_SOURCE_SCOPE:
+        raise ValueError(f"{parameter_name} has an unsupported source_scope")
+    graph = copied.get("inventory_graph")
+    if not isinstance(graph, dict):
+        raise ValueError(f"{parameter_name}.inventory_graph must be an object")
+    for collection in ("clients", "servers", "capabilities", "evidence"):
+        records = graph.get(collection)
+        if not isinstance(records, list):
+            raise ValueError(
+                f"{parameter_name}.inventory_graph.{collection} must be a list"
+            )
+        if any(
+            not isinstance(record, dict)
+            or record.get("source_scope") != HOSTED_SAFE_MCP_SOURCE_SCOPE
+            for record in records
+        ):
+            raise ValueError(
+                f"{parameter_name}.inventory_graph.{collection} has an invalid source scope"
+            )
+    # The existing graph comparison validator owns schema and stable-ID checks.
+    diff_inventory_graph(graph, graph)
+    return copied
+
+
 def annotate_changed_findings(
     base_findings: list[dict[str, Any]],
     head_findings: list[dict[str, Any]],
@@ -319,9 +704,17 @@ def annotate_changed_findings(
     for finding in head_findings:
         copied = dict(finding)
         base = base_by_fingerprint.get(str(copied.get("fingerprint", "")))
-        if base is not None and copied.get("baseline_state", copied.get("baseline_status")) == "unchanged":
-            before_action = str(base.get("policy_action", base.get("policy_decision", "")))
-            after_action = str(copied.get("policy_action", copied.get("policy_decision", "")))
+        if (
+            base is not None
+            and copied.get("baseline_state", copied.get("baseline_status"))
+            == "unchanged"
+        ):
+            before_action = str(
+                base.get("policy_action", base.get("policy_decision", ""))
+            )
+            after_action = str(
+                copied.get("policy_action", copied.get("policy_decision", ""))
+            )
             if before_action != after_action:
                 copied["policy_delta"] = {
                     "before": before_action,
@@ -408,7 +801,10 @@ def _contains_unrooted_absolute_path(value: str) -> bool:
 
 
 def _contains_secret_value(value: str) -> bool:
-    return SECRET_VALUE_PATTERN.search(value) is not None or SECRET_ASSIGNMENT_PATTERN.search(value) is not None
+    return (
+        SECRET_VALUE_PATTERN.search(value) is not None
+        or SECRET_ASSIGNMENT_PATTERN.search(value) is not None
+    )
 
 
 def _blocked_by_policy(findings: list[dict[str, Any]], fail_on: str) -> bool:
@@ -429,7 +825,11 @@ def _policy_outcomes(findings: list[dict[str, Any]]) -> dict[str, Any]:
         if finding.get("baseline_state", finding.get("baseline_status")) == "new"
         and finding.get("policy_action") in {"block", "require-review"}
     )
-    introduced += sum(1 for finding in findings if finding.get("policy_delta", {}).get("introduced_enforcement"))
+    introduced += sum(
+        1
+        for finding in findings
+        if finding.get("policy_delta", {}).get("introduced_enforcement")
+    )
     return {
         "by_action": dict(sorted(actions.items())),
         "introduced_enforcement_count": introduced,
