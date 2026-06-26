@@ -65,7 +65,7 @@ class ReleasePreparationTest(unittest.TestCase):
             "on:\n  pull_request:",
             "permissions:\n  contents: read",
             "name: LokiRed permission review",
-            "uses: actions/checkout@v6",
+            "uses: actions/checkout@v7",
             "fetch-depth: 0",
             "ref: ${{ github.event.pull_request.head.sha }}",
             "uses: actions/setup-python@v6",
